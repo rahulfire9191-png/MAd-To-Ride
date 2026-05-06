@@ -1276,22 +1276,7 @@
       <div class="form-group"><label class="form-label" for="phone">WhatsApp Number *</label><input class="form-input" type="tel" id="phone" placeholder="9876543210 (10-digit Indian mobile)" /></div>
       <div class="form-group"><label class="form-label" for="city">City / Location *</label><input class="form-input" type="text" id="city" placeholder="Pune, Maharashtra" /></div>
       <div class="form-group"><label class="form-label" for="bike">Your Bike *</label><input class="form-input" type="text" id="bike" placeholder="KTM Duke 390" /></div>
-      <div class="form-row">
-        <div class="form-group">
-          <label class="form-label" for="idProofType">ID Proof Type *</label>
-          <select class="form-select" id="idProofType" required>
-            <option value="">Select ID Proof...</option>
-            <option value="aadhar">Aadhar Card</option>
-            <option value="pan">PAN Card</option>
-            <option value="voter">Voter ID</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label class="form-label" for="idProofNumber">ID Proof Number *</label>
-          <input class="form-input" type="text" id="idProofNumber" placeholder="PAN: ABCDE1234F | Aadhar: 123456789012 | Voter: ABC1234567" required />
-        </div>
-      </div>
-      <div class="form-group">
+            <div class="form-group">
         <label class="form-label" for="instagram">Instagram ID</label>
         <input class="form-input" type="text" id="instagram" placeholder="Enter Instagram username (without @)" />
       </div>
@@ -2681,20 +2666,7 @@
     return /^[6789]\d{9}$/.test(cleanPhone) ? cleanPhone : null;
   }
 
-  function validatePANNumber(pan) {
-    return /^[A-Z]{5}[0-9]{4}[A-Z]{1}$/.test(pan.toUpperCase());
-  }
-
-  function validateAadharNumber(aadhar) {
-    const cleanAadhar = aadhar.replace(/[\s\-]/g, '');
-    return /^\d{12}$/.test(cleanAadhar);
-  }
-
-  function validateVoterID(voter) {
-    const cleanVoter = voter.replace(/\s/g, '');
-    return cleanVoter.length >= 10 && cleanVoter.length <= 20;
-  }
-
+  
   // Real-time validation
   document.addEventListener('DOMContentLoaded', function() {
     // Mobile number validation
@@ -2713,47 +2685,6 @@
         }
       });
     }
-
-    // ID proof validation
-    const idProofType = document.getElementById('idProofType');
-    const idProofNumber = document.getElementById('idProofNumber');
-    
-    function validateIDProof() {
-      const type = idProofType.value;
-      const number = idProofNumber.value.trim();
-      let isValid = false;
-      let message = '';
-
-      if (number) {
-        switch(type) {
-          case 'pan':
-            isValid = validatePANNumber(number);
-            message = isValid ? '' : 'PAN format: ABCDE1234F';
-            break;
-          case 'aadhar':
-            isValid = validateAadharNumber(number);
-            message = isValid ? '' : 'Aadhar: 12 digits';
-            break;
-          case 'voter':
-            isValid = validateVoterID(number);
-            message = isValid ? '' : 'Voter ID: 10-20 characters';
-            break;
-        }
-      }
-
-      if (number && !isValid) {
-        idProofNumber.style.borderColor = 'var(--red)';
-        idProofNumber.title = message;
-      } else {
-        idProofNumber.style.borderColor = '';
-        idProofNumber.title = '';
-      }
-    }
-
-    if (idProofType && idProofNumber) {
-      idProofType.addEventListener('change', validateIDProof);
-      idProofNumber.addEventListener('input', validateIDProof);
-    }
   });
 
   async function handleSubmit() {
@@ -2765,8 +2696,6 @@
     const phone     = document.getElementById('phone').value.trim();
     const city      = document.getElementById('city').value.trim();
     const bike      = document.getElementById('bike').value.trim();
-    const idProofType = document.getElementById('idProofType').value;
-    const idProofNumber = document.getElementById('idProofNumber').value.trim();
     const drivingLicenseFile = document.getElementById('drivingLicenseFile').files[0];
     const experience = document.getElementById('experience').value;
     const alias     = document.getElementById('alias').value.trim();
@@ -2778,7 +2707,7 @@
 
     msgEl.classList.remove('show');
 
-    if (!firstName || !lastName || !phone || !city || !bike || !idProofType || !idProofNumber) {
+    if (!firstName || !lastName || !phone || !city || !bike) {
       msgEl.textContent = '⚠️ Please fill in all required fields (marked with *).';
       msgEl.classList.add('show');
       return;
@@ -2792,44 +2721,9 @@
       return;
     }
 
-    // Validate ID proof
-    let idProofValid = false;
-    switch(idProofType) {
-      case 'pan':
-        idProofValid = validatePANNumber(idProofNumber);
-        if (!idProofValid) {
-          msgEl.textContent = '⚠️ Invalid PAN card number. Please enter a valid PAN in format ABCDE1234F.';
-          msgEl.classList.add('show');
-          return;
-        }
-        break;
-      case 'aadhar':
-        idProofValid = validateAadharNumber(idProofNumber);
-        if (!idProofValid) {
-          msgEl.textContent = '⚠️ Invalid Aadhar card number. Please enter a valid 12-digit Aadhar number.';
-          msgEl.classList.add('show');
-          return;
-        }
-        break;
-      case 'voter':
-        idProofValid = validateVoterID(idProofNumber);
-        if (!idProofValid) {
-          msgEl.textContent = '⚠️ Invalid Voter ID number. Please enter a valid Voter ID.';
-          msgEl.classList.add('show');
-          return;
-        }
-        break;
-    }
-
-    // Validate driving license file is uploaded
-    if (!drivingLicenseFile) {
-      msgEl.textContent = '⚠️ Driving license is required for all riders.';
-      msgEl.classList.add('show');
-      return;
-    }
-
-    // Validate file size
-    if (drivingLicenseFile.size > 5 * 1024 * 1024) {
+    
+    // Validate file size if driving license is uploaded
+    if (drivingLicenseFile && drivingLicenseFile.size > 5 * 1024 * 1024) {
       msgEl.textContent = '⚠️ Driving license file must be less than 5MB.';
       msgEl.classList.add('show');
       return;
@@ -2844,15 +2738,11 @@
     btn.textContent = 'Submitting...';
 
     try {
-      // Create FormData to handle file upload
-      const formData = new FormData();
       formData.append('firstName', firstName);
       formData.append('lastName', lastName);
       formData.append('phone', phone);
       formData.append('city', city);
       formData.append('bike', bike);
-      formData.append('idProofType', idProofType);
-      formData.append('idProofNumber', idProofNumber);
       formData.append('drivingLicenseFile', drivingLicenseFile);
       formData.append('experience', experience);
       formData.append('alias', alias);

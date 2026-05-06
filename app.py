@@ -56,8 +56,6 @@ class Registration(db.Model):
     phone = db.Column(db.String(20), unique=True, nullable=False)
     city = db.Column(db.String(100), nullable=False)
     bike = db.Column(db.String(200), nullable=False)
-    idProofType = db.Column(db.String(50), nullable=False)
-    idProofNumber = db.Column(db.String(100), nullable=False)
     drivingLicenseFile = db.Column(db.String(500))
     experience = db.Column(db.String(200))
     alias = db.Column(db.String(100))
@@ -79,8 +77,6 @@ class Registration(db.Model):
             'phone': self.phone,
             'city': self.city,
             'bike': self.bike,
-            'idProofType': self.idProofType,
-            'idProofNumber': self.idProofNumber,
             'drivingLicenseFile': self.drivingLicenseFile,
             'experience': self.experience,
             'alias': self.alias,
@@ -115,7 +111,7 @@ def upload_file_to_s3(file, filename, folder='uploads'):
                 file,
                 AWS_BUCKET_NAME,
                 f"{folder}/{filename}",
-                ExtraArgs={'ContentType': file.content_type}
+                ExtraArgs={'ContentType': file.content_type or 'application/octet-stream'}
             )
             return f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{folder}/{filename}"
         except NoCredentialsError:
@@ -132,21 +128,6 @@ def validate_mobile_number(phone):
     clean_phone = re.sub(r'[\s\-\(\)]', '', phone)
     if re.match(r'^[6789]\d{9}$', clean_phone):
         return clean_phone
-    return None
-
-def validate_pan_number(pan):
-    """Validate Indian PAN card number format"""
-    import re
-    if re.match(r'^[A-Z]{5}[0-9]{4}[A-Z]{1}$', pan.upper()):
-        return pan.upper()
-    return None
-
-def validate_aadhar_number(aadhar):
-    """Validate Indian Aadhar card number format"""
-    import re
-    clean_aadhar = re.sub(r'[\s\-]', '', aadhar)
-    if re.match(r'^\d{12}$', clean_aadhar):
-        return clean_aadhar
     return None
 
 def check_duplicate_mobile(phone):
@@ -506,7 +487,7 @@ def register():
             rider_photo = None
             bike_photo = None
 
-        required = ['firstName', 'lastName', 'phone', 'city', 'bike', 'idProofType', 'idProofNumber']
+        required = ['firstName', 'lastName', 'phone', 'city', 'bike']
         for field in required:
             if not data.get(field, '').strip():
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
@@ -521,23 +502,7 @@ def register():
         if check_duplicate_mobile(phone):
             return jsonify({'success': False, 'message': 'This mobile number is already registered. One rider can join only once.'}), 400
 
-        # Validate ID proof based on type
-        id_proof_type = data.get('idProofType', '').strip().lower()
-        id_proof_number = data.get('idProofNumber', '').strip()
-        
-        if id_proof_type == 'pan':
-            validated_pan = validate_pan_number(id_proof_number)
-            if not validated_pan:
-                return jsonify({'success': False, 'message': 'Invalid PAN card number. Please enter a valid PAN in format ABCDE1234F.'}), 400
-        elif id_proof_type == 'aadhar':
-            validated_aadhar = validate_aadhar_number(id_proof_number)
-            if not validated_aadhar:
-                return jsonify({'success': False, 'message': 'Invalid Aadhar card number. Please enter a valid 12-digit Aadhar number.'}), 400
-        elif id_proof_type == 'voter':
-            if len(id_proof_number.replace(' ', '')) < 10 or len(id_proof_number.replace(' ', '')) > 20:
-                return jsonify({'success': False, 'message': 'Invalid Voter ID number. Please enter a valid Voter ID.'}), 400
-
-        # Handle driving license file upload (mandatory)
+        # Handle driving license file upload (optional)
         driving_license_filename = None
         if driving_license_file and driving_license_file.filename:
             if allowed_file(driving_license_file.filename):
@@ -545,8 +510,6 @@ def register():
                 driving_license_filename = upload_file_to_s3(driving_license_file, filename)
             else:
                 return jsonify({'success': False, 'message': 'Invalid file type. Allowed: JPG, PNG, PDF'}), 400
-        else:
-            return jsonify({'success': False, 'message': 'Driving license is required'}), 400
 
         rider_photo_filename = None
         if rider_photo and rider_photo.filename:
@@ -571,8 +534,6 @@ def register():
             phone=validated_phone,
             city=data.get('city', '').strip(),
             bike=data.get('bike', '').strip(),
-            idProofType=data.get('idProofType', '').strip(),
-            idProofNumber=id_proof_number.upper() if id_proof_type == 'pan' else id_proof_number.replace(' ', '').replace('-', ''),
             drivingLicenseFile=driving_license_filename,
             experience=data.get('experience', '').strip(),
             alias=data.get('alias', '').strip(),
