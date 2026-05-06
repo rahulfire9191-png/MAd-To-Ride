@@ -93,7 +93,7 @@ class Registration(db.Model):
 
 # Create uploads folder if it doesn't exist (for local development)
 if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -118,9 +118,19 @@ def upload_file_to_s3(file, filename, folder='uploads'):
             print("AWS credentials not available, saving locally")
     
     # Fallback to local storage
-    file_path = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(file_path)
-    return f"/uploads/{filename}"
+    try:
+        # Ensure uploads directory exists
+        upload_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        if not os.path.exists(upload_dir):
+            os.makedirs(upload_dir, exist_ok=True)
+        
+        file_path = os.path.join(upload_dir, filename)
+        file.save(file_path)
+        print(f"File saved locally to: {file_path}")
+        return f"/uploads/{filename}"
+    except Exception as e:
+        print(f"Error saving file locally: {e}")
+        return None
 
 def validate_mobile_number(phone):
     """Validate 10-digit Indian mobile number"""
@@ -722,7 +732,37 @@ def serve_file(filename):
     # Serve files locally or redirect to S3 if available
     if s3_client:
         return redirect(f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/uploads/{filename}")
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    
+    # For local development and Render.com
+    try:
+        # Try to serve from uploads directory
+        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+    except FileNotFoundError:
+        return jsonify({'error': 'File not found'}), 404
+
+@app.route('/debug/uploads')
+def debug_uploads():
+    """Debug route to check uploaded files"""
+    try:
+        upload_dir = app.config['UPLOAD_FOLDER']
+        if os.path.exists(upload_dir):
+            files = os.listdir(upload_dir)
+            return jsonify({
+                'upload_dir': upload_dir,
+                'files': files,
+                'count': len(files),
+                'exists': True
+            })
+        else:
+            return jsonify({
+                'upload_dir': upload_dir,
+                'files': [],
+                'count': 0,
+                'exists': False,
+                'message': 'Uploads directory does not exist'
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # Initialize database
 with app.app_context():
