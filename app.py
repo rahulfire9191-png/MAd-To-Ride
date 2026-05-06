@@ -91,9 +91,19 @@ class Registration(db.Model):
             'timestamp': self.timestamp
         }
 
-# Create uploads folder if it doesn't exist (for local development)
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# Create uploads folder if it doesn't exist (for local development and Render.com)
+try:
+    upload_dir = os.path.abspath(UPLOAD_FOLDER)
+    if not os.path.exists(upload_dir):
+        os.makedirs(upload_dir, exist_ok=True)
+        print(f"Created uploads directory: {upload_dir}")
+    else:
+        print(f"Uploads directory exists: {upload_dir}")
+except Exception as e:
+    print(f"Error creating uploads directory: {e}")
+    # Fallback to current directory
+    if not os.path.exists(UPLOAD_FOLDER):
+        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and \
@@ -119,14 +129,16 @@ def upload_file_to_s3(file, filename, folder='uploads'):
     
     # Fallback to local storage
     try:
-        # Ensure uploads directory exists
-        upload_dir = os.path.abspath(app.config['UPLOAD_FOLDER'])
+        # Use the configured upload folder directly
+        upload_dir = app.config['UPLOAD_FOLDER']
         if not os.path.exists(upload_dir):
             os.makedirs(upload_dir, exist_ok=True)
+            print(f"Created upload directory: {upload_dir}")
         
         file_path = os.path.join(upload_dir, filename)
         file.save(file_path)
         print(f"File saved locally to: {file_path}")
+        print(f"File will be served at: /uploads/{filename}")
         return f"/uploads/{filename}"
     except Exception as e:
         print(f"Error saving file locally: {e}")
@@ -745,28 +757,73 @@ def debug_uploads():
     """Debug route to check uploaded files"""
     try:
         upload_dir = app.config['UPLOAD_FOLDER']
+        abs_upload_dir = os.path.abspath(upload_dir)
+        
         if os.path.exists(upload_dir):
             files = os.listdir(upload_dir)
+            file_details = []
+            for file in files:
+                file_path = os.path.join(upload_dir, file)
+                file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
+                file_details.append({
+                    'name': file,
+                    'size': file_size,
+                    'path': file_path,
+                    'url': f"/uploads/{file}",
+                    'exists': os.path.exists(file_path)
+                })
+            
             return jsonify({
                 'upload_dir': upload_dir,
-                'files': files,
+                'abs_upload_dir': abs_upload_dir,
+                'files': file_details,
                 'count': len(files),
-                'exists': True
+                'exists': True,
+                'working_directory': os.getcwd(),
+                'flask_upload_folder': app.config['UPLOAD_FOLDER']
             })
         else:
             return jsonify({
                 'upload_dir': upload_dir,
+                'abs_upload_dir': abs_upload_dir,
                 'files': [],
                 'count': 0,
                 'exists': False,
-                'message': 'Uploads directory does not exist'
+                'message': 'Uploads directory does not exist',
+                'working_directory': os.getcwd(),
+                'flask_upload_folder': app.config['UPLOAD_FOLDER']
             })
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({
+            'error': str(e),
+            'working_directory': os.getcwd(),
+            'flask_upload_folder': app.config['UPLOAD_FOLDER']
+        }), 500
 
 # Initialize database
 with app.app_context():
     db.create_all()
+    
+    # Add CEO rider if not exists
+    ceo_rider = Registration.query.filter_by(phone='9876543210').first()
+    if not ceo_rider:
+        ceo = Registration(
+            firstName='Rahul',
+            lastName='Choudhari',
+            phone='9876543210',
+            city='Pune',
+            bike='Royal Enfield Classic 350',
+            experience='10+ years',
+            alias='Madmax',
+            instagram='madmax_mtr',
+            reason='Founder of Mad To Ride Brotherhood',
+            role='Founder',
+            priority=1,
+            timestamp='01 Jan 2020'
+        )
+        db.session.add(ceo)
+        db.session.commit()
+        print("CEO rider added to database")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
