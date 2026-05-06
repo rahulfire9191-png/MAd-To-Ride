@@ -846,13 +846,57 @@ def debug_uploads():
             'flask_upload_folder': app.config['UPLOAD_FOLDER']
         }), 500
 
-# Initialize database
+@app.route('/debug/database')
+def debug_database():
+    """Debug route to check database status and riders"""
+    try:
+        riders = Registration.query.all()
+        rider_details = []
+        
+        for rider in riders:
+            rider_details.append({
+                'id': rider.id,
+                'firstName': rider.firstName,
+                'lastName': rider.lastName,
+                'phone': rider.phone,
+                'role': rider.role,
+                'priority': rider.priority,
+                'timestamp': rider.timestamp,
+                'hasPhotos': {
+                    'riderPhoto': bool(rider.riderPhoto),
+                    'bikePhoto': bool(rider.bikePhoto),
+                    'sectionPhoto': bool(rider.sectionPhoto)
+                }
+            })
+        
+        return jsonify({
+            'database_status': 'connected',
+            'total_riders': len(riders),
+            'riders': rider_details,
+            'database_url': os.environ.get('DATABASE_URL', 'Not configured'),
+            'app_environment': os.environ.get('FLASK_ENV', 'development'),
+            'render_service': os.environ.get('RENDER_SERVICE', 'unknown')
+        })
+    except Exception as e:
+        return jsonify({
+            'database_status': 'error',
+            'error': str(e),
+            'database_url': os.environ.get('DATABASE_URL', 'Not configured'),
+            'app_environment': os.environ.get('FLASK_ENV', 'development')
+        }), 500
+
+# Initialize database with data preservation
 with app.app_context():
+    # Create tables only if they don't exist
     db.create_all()
     
-    # Add CEO rider if not exists
-    ceo_rider = Registration.query.filter_by(phone='9876543210').first()
-    if not ceo_rider:
+    # Check if database is empty (new deployment)
+    rider_count = Registration.query.count()
+    print(f"Current rider count: {rider_count}")
+    
+    # Only add CEO rider if database is completely empty
+    if rider_count == 0:
+        print("Database is empty, adding CEO rider...")
         ceo = Registration(
             firstName='Rahul',
             lastName='Choudhari',
@@ -870,6 +914,8 @@ with app.app_context():
         db.session.add(ceo)
         db.session.commit()
         print("CEO rider added to database")
+    else:
+        print(f"Database already has {rider_count} riders, preserving existing data")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))

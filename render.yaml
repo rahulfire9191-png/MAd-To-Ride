@@ -26,3 +26,4 @@ databases:
     plan: free
     databaseName: mtr_database
     user: mtr_user
+    ipAllowList: []  # Allow all connections for Render.com internal network
