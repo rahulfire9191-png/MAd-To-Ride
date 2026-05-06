@@ -1,3 +1,7 @@
 flask
 gunicorn
 werkzeug
+psycopg2-binary
+flask-sqlalchemy
+python-dotenv
+boto3  # For AWS S3 file storage

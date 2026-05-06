@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: mad-to-ride
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: mtr-db
+          property: connectionString
+      - key: ADMIN_USERNAME
+        value: Madmax
+      - key: ADMIN_PASSWORD
+        value: Pa$$w0rd@Madmax
+      - key: WHATSAPP_LINK
+        value: https://chat.whatsapp.com/HbRgZJa1Rqm5Kbso36WDWf?mode=hqctcla
+      - key: FLASK_ENV
+        value: production
+      - key: PORT
+        value: 10000
+
+databases:
+  - name: mtr-db
+    plan: free
+    databaseName: mtr_database
+    user: mtr_user
