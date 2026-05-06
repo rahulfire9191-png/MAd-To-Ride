@@ -636,16 +636,22 @@ def update_rider():
         # Process rider photo if provided
         if rider_photo and rider_photo.filename:
             if allowed_image_file(rider_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{rider_photo.filename}")
-                rider_to_update.riderPhoto = upload_file_to_s3(rider_photo, filename)
+                rider_photo_base64 = encode_file_to_base64(rider_photo)
+                if rider_photo_base64:
+                    rider_to_update.riderPhoto = rider_photo_base64
+                else:
+                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
-        
+
         # Process bike photo if provided
         if bike_photo and bike_photo.filename:
             if allowed_image_file(bike_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_bike_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{bike_photo.filename}")
-                rider_to_update.bikePhoto = upload_file_to_s3(bike_photo, filename)
+                bike_photo_base64 = encode_file_to_base64(bike_photo)
+                if bike_photo_base64:
+                    rider_to_update.bikePhoto = bike_photo_base64
+                else:
+                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
         
@@ -653,8 +659,11 @@ def update_rider():
         section_photo = request.files.get('sectionPhoto')
         if section_photo and section_photo.filename:
             if allowed_image_file(section_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_section_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{section_photo.filename}")
-                rider_to_update.sectionPhoto = upload_file_to_s3(section_photo, filename)
+                section_photo_base64 = encode_file_to_base64(section_photo)
+                if section_photo_base64:
+                    rider_to_update.sectionPhoto = section_photo_base64
+                else:
+                    return jsonify({'success': False, 'message': 'Error processing section photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid section photo file type. Allowed: JPG, PNG'}), 400
         
