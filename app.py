@@ -60,9 +60,9 @@ class Registration(db.Model):
     experience = db.Column(db.String(200))
     alias = db.Column(db.String(100))
     instagram = db.Column(db.String(200))
-    riderPhoto = db.Column(db.String(500))
-    bikePhoto = db.Column(db.String(500))
-    sectionPhoto = db.Column(db.String(500))
+    riderPhoto = db.Column(db.Text)  # Store as base64
+    bikePhoto = db.Column(db.Text)  # Store as base64
+    sectionPhoto = db.Column(db.Text)  # Store as base64
     reason = db.Column(db.Text)
     role = db.Column(db.String(50), default='Member')
     priority = db.Column(db.Integer, default=5)
@@ -112,6 +112,21 @@ def allowed_file(filename):
 def allowed_image_file(filename):
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
+
+def encode_file_to_base64(file):
+    """Encode uploaded file to base64 string"""
+    if file and file.filename:
+        try:
+            file.seek(0)  # Reset file pointer
+            file_data = file.read()
+            import base64
+            encoded = base64.b64encode(file_data).decode('utf-8')
+            file_type = file.content_type or 'image/jpeg'
+            return f"data:{file_type};base64,{encoded}"
+        except Exception as e:
+            print(f"Error encoding file to base64: {e}")
+            return None
+    return None
 
 def upload_file_to_s3(file, filename, folder='uploads'):
     """Upload file to S3 or save locally if S3 not configured"""
@@ -305,20 +320,22 @@ def add_cofounder():
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
         
         # Process rider photo
-        rider_photo_filename = None
+        rider_photo_base64 = None
         if rider_photo and rider_photo.filename:
             if allowed_image_file(rider_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{rider_photo.filename}")
-                rider_photo_filename = upload_file_to_s3(rider_photo, filename)
+                rider_photo_base64 = encode_file_to_base64(rider_photo)
+                if not rider_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
 
         # Process bike photo
-        bike_photo_filename = None
+        bike_photo_base64 = None
         if bike_photo and bike_photo.filename:
             if allowed_image_file(bike_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_bike_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{bike_photo.filename}")
-                bike_photo_filename = upload_file_to_s3(bike_photo, filename)
+                bike_photo_base64 = encode_file_to_base64(bike_photo)
+                if not bike_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
 
@@ -332,8 +349,8 @@ def add_cofounder():
             experience=data.get('experience', '10+ years'),
             alias=data.get('alias', '').strip(),
             instagram=data.get('instagram', '').strip(),
-            riderPhoto=rider_photo_filename,
-            bikePhoto=bike_photo_filename,
+            riderPhoto=rider_photo_base64,
+            bikePhoto=bike_photo_base64,
             reason='Co-Founder of MTR Brotherhood',
             role=data.get('role', 'Co-Founder'),
             priority=2,
@@ -371,20 +388,22 @@ def add_captain():
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
         
         # Process rider photo
-        rider_photo_filename = None
+        rider_photo_base64 = None
         if rider_photo and rider_photo.filename:
             if allowed_image_file(rider_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{rider_photo.filename}")
-                rider_photo_filename = upload_file_to_s3(rider_photo, filename)
+                rider_photo_base64 = encode_file_to_base64(rider_photo)
+                if not rider_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
 
         # Process bike photo
-        bike_photo_filename = None
+        bike_photo_base64 = None
         if bike_photo and bike_photo.filename:
             if allowed_image_file(bike_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_bike_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{bike_photo.filename}")
-                bike_photo_filename = upload_file_to_s3(bike_photo, filename)
+                bike_photo_base64 = encode_file_to_base64(bike_photo)
+                if not bike_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
 
@@ -408,8 +427,8 @@ def add_captain():
             experience=data.get('experience', '5+ years'),
             alias=data.get('alias', '').strip(),
             instagram=data.get('instagram', '').strip(),
-            riderPhoto=rider_photo_filename,
-            bikePhoto=bike_photo_filename,
+            riderPhoto=rider_photo_base64,
+            bikePhoto=bike_photo_base64,
             reason=f'Captain {captain_number} of MTR Brotherhood',
             role=data.get('role', 'Captain'),
             captainNumber=captain_number,
@@ -448,20 +467,22 @@ def add_member_manual():
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
         
         # Process rider photo
-        rider_photo_filename = None
+        rider_photo_base64 = None
         if rider_photo and rider_photo.filename:
             if allowed_image_file(rider_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{rider_photo.filename}")
-                rider_photo_filename = upload_file_to_s3(rider_photo, filename)
+                rider_photo_base64 = encode_file_to_base64(rider_photo)
+                if not rider_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
 
         # Process bike photo
-        bike_photo_filename = None
+        bike_photo_base64 = None
         if bike_photo and bike_photo.filename:
             if allowed_image_file(bike_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_bike_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{bike_photo.filename}")
-                bike_photo_filename = upload_file_to_s3(bike_photo, filename)
+                bike_photo_base64 = encode_file_to_base64(bike_photo)
+                if not bike_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
 
@@ -472,11 +493,11 @@ def add_member_manual():
             'phone': data.get('phone', '').strip(),
             'city': data.get('city', '').strip(),
             'bike': data.get('bike', '').strip(),
-            'experience': data.get('experience', ''),
-            'alias': data.get('alias', ''),
+            'experience': data.get('experience', '').strip(),
+            'alias': data.get('alias', '').strip(),
             'instagram': data.get('instagram', '').strip(),
-            'riderPhoto': rider_photo_filename,
-            'bikePhoto': bike_photo_filename,
+            'riderPhoto': rider_photo_base64,
+            'bikePhoto': bike_photo_base64,
             'reason': 'Added manually by admin',
             'role': data.get('role', 'Member'),
             'priority': 5,
@@ -560,8 +581,8 @@ def register():
             experience=data.get('experience', '').strip(),
             alias=data.get('alias', '').strip(),
             instagram=instagram,
-            riderPhoto=rider_photo_filename,
-            bikePhoto=bike_photo_filename,
+            riderPhoto=rider_photo_base64,
+            bikePhoto=bike_photo_base64,
             reason=data.get('message', '').strip(),
             role='Member',
             priority=5,
@@ -741,16 +762,32 @@ def update_rider_role():
 
 @app.route('/uploads/<filename>')
 def serve_file(filename):
-    # Serve files locally or redirect to S3 if available
-    if s3_client:
-        return redirect(f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/uploads/{filename}")
+    """Serve uploaded files - works for both local and Render.com"""
+    print(f"Attempting to serve file: {filename}")
     
-    # For local development and Render.com
+    # If S3 is configured, redirect to S3
+    if s3_client:
+        s3_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/uploads/{filename}"
+        print(f"Redirecting to S3: {s3_url}")
+        return redirect(s3_url)
+    
+    # Local file serving for Render.com
     try:
-        # Try to serve from uploads directory
-        return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
-    except FileNotFoundError:
-        return jsonify({'error': 'File not found'}), 404
+        upload_folder = app.config['UPLOAD_FOLDER']
+        print(f"Upload folder: {upload_folder}")
+        
+        # Check if file exists
+        file_path = os.path.join(upload_folder, filename)
+        if os.path.exists(file_path):
+            print(f"File exists: {file_path}")
+            return send_from_directory(upload_folder, filename)
+        else:
+            print(f"File not found: {file_path}")
+            return jsonify({'error': f'File {filename} not found', 'path': file_path}), 404
+            
+    except Exception as e:
+        print(f"Error serving file: {e}")
+        return jsonify({'error': str(e), 'filename': filename}), 500
 
 @app.route('/debug/uploads')
 def debug_uploads():

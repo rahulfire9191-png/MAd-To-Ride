@@ -1771,14 +1771,14 @@
         
         // Set bike photo as background if available
         const cardBackgroundStyle = rider.bikePhoto 
-          ? `background-image: url('/uploads/${rider.bikePhoto}'); background-size: cover; background-position: center; background-repeat: no-repeat; position: relative;`
+          ? `background-image: url('${rider.bikePhoto}'); background-size: cover; background-position: center; background-repeat: no-repeat; position: relative;`
           : '';
         
         riderCard.innerHTML = `
           <div style="${cardBackgroundStyle}">
             ${rider.bikePhoto ? '<div style="position: absolute; inset: 0; background: rgba(0,0,0,0.7); backdrop-filter: blur(2px);"></div>' : ''}
             <div style="position: relative; z-index: 1;">
-              <div class="rider-avatar" style="${rider.riderPhoto ? `background-image: url('/uploads/${rider.riderPhoto}'); background-size: cover; background-position: center; background-repeat: no-repeat;` : `background:${gradient}`}">${!rider.riderPhoto ? initials : ''}</div>
+              <div class="rider-avatar" style="${rider.riderPhoto ? `background-image: url('${rider.riderPhoto}'); background-size: cover; background-position: center; background-repeat: no-repeat;` : `background:${gradient}`}">${!rider.riderPhoto ? initials : ''}</div>
               <div style="font-size: 0.75rem; color: #fff; margin-bottom: 4px; font-weight: 500;">${rider.firstName} ${rider.lastName}</div>
               <div class="rider-alias">${rider.alias || 'NEW RIDER'}</div>
               <div class="rider-bike">${rider.bike}</div>
