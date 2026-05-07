@@ -1109,7 +1109,21 @@
           <li><a href="#riders" class="nav-link" onclick="closeMobileMenu()">Riders</a></li>
           <li><a href="#gallery" class="nav-link" onclick="closeMobileMenu()">Gallery</a></li>
           <li><a href="#contact" class="nav-link" onclick="closeMobileMenu()">Contact</a></li>
-          <li><button onclick="toggleAdminPanel()" class="nav-admin" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 16px;cursor:pointer;transition:all 0.2s;"> Admin</button></li>
+          <li><button onclick="toggleAdminPanel()" class="nav-admin" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 16px;cursor:pointer;transition:all 0.2s;"> Admin</button>
+          <div class="admin-actions">
+            <button class="btn-primary" onclick="showAddRiderModal()">➕ Add Rider</button>
+            <button class="btn-primary" onclick="showRoleAssignmentModal()">👥 Assign Role</button>
+            <button class="btn-primary" onclick="showDeleteRiderModal()">🗑️ Delete Rider</button>
+            <button class="btn-primary" onclick="showEditRiderModal()">✏️ Edit Rider</button>
+            <button class="btn-primary" onclick="showCeoEditModal()">👑 Edit CEO</button>
+            <button class="btn-primary" onclick="showAddCoFounderModal()">👥 Add Co-Founder</button>
+            <button class="btn-primary" onclick="showAddCaptainModal()">👥 Add Captain</button>
+            <button class="btn-primary" onclick="showAddMemberModal()">➕ Add Member</button>
+            <button class="btn-primary" onclick="downloadBackup()" style="background: linear-gradient(135deg, #28a745, #20c997);">💾 Download Backup</button>
+            <button class="btn-primary" onclick="checkBackupStatus()" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">📊 Backup Status</button>
+            <button class="btn-primary" onclick="createBackup()" style="background: linear-gradient(135deg, #17a2b8, #138496);">🔄 Create Backup</button>
+          </div>
+        </li>
         </ul>
       </div>
     </nav>
@@ -2240,17 +2254,11 @@
       });
 
       const data = await response.json();
+      
       if (data.success) {
-        // Show brief success message
-        const successMsg = document.createElement('div');
-        successMsg.style.cssText = `
-          position: fixed; top: 20px; right: 20px; z-index: 1000;
-          background: #4CAF50; color: white; padding: 12px 20px;
-          border-radius: 4px; font-weight: 500; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-          animation: slideIn 0.3s ease;
-        `;
-        successMsg.textContent = '✅ Rider deleted successfully';
-        document.body.appendChild(successMsg);
+        await loadRiders();
+        closeAllModals();
+        showMessage('Rider deleted successfully!', 'success');
         
         // Remove message after 2 seconds
         setTimeout(() => {

@@ -1074,6 +1074,47 @@ def auto_backup():
     except:
         return jsonify({'success': False})
 
+@app.route('/api/download-backup', methods=['GET'])
+def download_backup():
+    """Download backup file for users"""
+    try:
+        backup_file = 'mtr_backup.json'
+        if os.path.exists(backup_file):
+            return send_file(backup_file, as_attachment=True, download_name='mtr_backup.json')
+        else:
+            return jsonify({'error': 'No backup file found'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/backup-status', methods=['GET'])
+def backup_status():
+    """Check backup status and file info"""
+    try:
+        backup_file = 'mtr_backup.json'
+        if os.path.exists(backup_file):
+            file_size = os.path.getsize(backup_file)
+            mod_time = os.path.getmtime(backup_file)
+            
+            # Read backup to get rider count
+            with open(backup_file, 'r') as f:
+                backup_data = json.load(f)
+            
+            return jsonify({
+                'backup_exists': True,
+                'file_size': file_size,
+                'last_modified': mod_time,
+                'rider_count': len(backup_data),
+                'file_path': backup_file,
+                'backup_time': datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
+            })
+        else:
+            return jsonify({
+                'backup_exists': False,
+                'message': 'No backup file found'
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 # Initialize database with external storage for permanent persistence
 with app.app_context():
     # Create tables only if they don't exist
