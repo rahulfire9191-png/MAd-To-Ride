@@ -261,10 +261,31 @@ def serve_sound(filename):
     return send_from_directory('sounds', filename)
 
 @app.route('/')
-def home():
+def index():
     riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).limit(12).all()
     recent_riders = [rider.to_dict() for rider in riders] if riders else []
     return render_template('index.html', riders=recent_riders)
+
+@app.route('/health')
+def health_check():
+    """Health check route for deployment debugging"""
+    try:
+        # Test database connection
+        rider_count = Registration.query.count()
+        
+        return jsonify({
+            'status': 'healthy',
+            'database': 'connected',
+            'rider_count': rider_count,
+            'timestamp': datetime.now().isoformat(),
+            'version': '1.0'
+        })
+    except Exception as e:
+        return jsonify({
+            'status': 'unhealthy',
+            'error': str(e),
+            'timestamp': datetime.now().isoformat()
+        }), 500
 
 @app.route('/api/riders', methods=['GET'])
 def get_riders():
