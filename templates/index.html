@@ -1079,7 +1079,49 @@
     .btn-delete:hover { background: var(--orange); transform: translateY(-1px); }
 
     @media (max-width: 900px) {
-      nav { padding: 16px 24px; } .nav-links { display: none; }
+      nav { padding: 16px 24px; } 
+      .mobile-menu-toggle { display: block; }
+      .nav-links { 
+        display: none; 
+        position: absolute; 
+        top: 100%; 
+        left: 0; 
+        right: 0; 
+        background: var(--darker); 
+        flex-direction: column; 
+        padding: 20px; 
+        box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
+        border-bottom: 1px solid var(--border);
+      }
+      .nav-links.mobile-active { display: flex; }
+      .nav-links li { width: 100%; }
+      .nav-links a { 
+        display: block; 
+        padding: 12px 0; 
+        border-bottom: 1px solid var(--border); 
+        width: 100%;
+      }
+      .nav-links .nav-admin { 
+        display: block; 
+        width: 100%; 
+        margin-top: 10px;
+        text-align: center;
+      }
+      .admin-actions { 
+        position: static !important;
+        transform: none !important;
+        display: none !important;
+        flex-direction: column;
+        gap: 10px;
+        margin-top: 10px;
+        padding: 15px;
+        background: var(--mid);
+        border-radius: 8px;
+        border: 1px solid var(--border);
+      }
+      .admin-actions.active { 
+        display: flex !important;
+      }
       .hero { padding: 100px 24px 60px; } section { padding: 70px 24px; }
       .about-grid, .join-layout { grid-template-columns: 1fr; gap: 40px; }
       .features-grid { grid-template-columns: 1fr; }
@@ -2950,12 +2992,10 @@
     document.getElementById('ceoUnlockError').classList.remove('show');
   }
 
-    document.getElementById('confirmPassword').value = '';
-    document.getElementById('changePasswordError').classList.remove('show');
-  }
-
   function closeChangePasswordModal() {
     document.getElementById('changePasswordModal').classList.remove('active');
+    document.getElementById('confirmPassword').value = '';
+    document.getElementById('changePasswordError').classList.remove('show');
   }
 
   function closeCeoEditModal() {
