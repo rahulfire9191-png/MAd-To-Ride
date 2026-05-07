@@ -1313,6 +1313,174 @@ def cloud_status():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/api/admin/create-backup', methods=['POST'])
+def create_backup():
+    """Create backup manually"""
+    try:
+        if not check_admin_auth():
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+        # Create backup
+        backup_data = []
+        riders = Registration.query.all()
+        for rider in riders:
+            backup_data.append(rider.to_dict())
+        
+        # Save to local file
+        with open('mtr_backup.json', 'w') as f:
+            json.dump(backup_data, f, indent=2, default=str)
+        
+        # Sync to Google Drive
+        try:
+            save_to_google_drive(backup_data)
+        except:
+            pass  # Continue even if Google Drive fails
+        
+        return jsonify({
+            'success': True,
+            'message': 'Backup created successfully',
+            'riders_count': len(backup_data),
+            'timestamp': datetime.now().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/admin/restore-backup', methods=['POST'])
+def restore_backup():
+    """Restore from backup file"""
+    try:
+        if not check_admin_auth():
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+        # Try to restore from local backup first
+        backup_data = None
+        try:
+            with open('mtr_backup.json', 'r') as f:
+                backup_data = json.load(f)
+        except:
+            # Try Google Drive
+            backup_data = load_from_google_drive()
+        
+        if not backup_data:
+            return jsonify({'success': False, 'message': 'No backup found'}), 404
+        
+        # Clear existing data
+        Registration.query.delete()
+        db.session.commit()
+        
+        # Restore data
+        for rider_data in backup_data:
+            rider = Registration(
+                firstName=rider_data.get('firstName', ''),
+                lastName=rider_data.get('lastName', ''),
+                phone=rider_data.get('phone', ''),
+                city=rider_data.get('city', ''),
+                bike=rider_data.get('bike', ''),
+                experience=rider_data.get('experience', ''),
+                alias=rider_data.get('alias', ''),
+                instagram=rider_data.get('instagram', ''),
+                riderPhoto=rider_data.get('riderPhoto'),
+                bikePhoto=rider_data.get('bikePhoto'),
+                sectionPhoto=rider_data.get('sectionPhoto'),
+                reason=rider_data.get('reason', ''),
+                role=rider_data.get('role', 'Member'),
+                priority=rider_data.get('priority', 5),
+                timestamp=rider_data.get('timestamp', datetime.now())
+            )
+            db.session.add(rider)
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': 'Backup restored successfully',
+            'riders_restored': len(backup_data)
+        })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/admin/auto-restore', methods=['POST'])
+def auto_restore():
+    """Auto-restore data if needed"""
+    try:
+        # Check if database is empty
+        rider_count = Registration.query.count()
+        
+        if rider_count == 0:
+            # Try to restore from backup
+            backup_data = None
+            try:
+                with open('mtr_backup.json', 'r') as f:
+                    backup_data = json.load(f)
+            except:
+                backup_data = load_from_google_drive()
+            
+            if backup_data:
+                # Restore data
+                for rider_data in backup_data:
+                    rider = Registration(
+                        firstName=rider_data.get('firstName', ''),
+                        lastName=rider_data.get('lastName', ''),
+                        phone=rider_data.get('phone', ''),
+                        city=rider_data.get('city', ''),
+                        bike=rider_data.get('bike', ''),
+                        experience=rider_data.get('experience', ''),
+                        alias=rider_data.get('alias', ''),
+                        instagram=rider_data.get('instagram', ''),
+                        riderPhoto=rider_data.get('riderPhoto'),
+                        bikePhoto=rider_data.get('bikePhoto'),
+                        sectionPhoto=rider_data.get('sectionPhoto'),
+                        reason=rider_data.get('reason', ''),
+                        role=rider_data.get('role', 'Member'),
+                        priority=rider_data.get('priority', 5),
+                        timestamp=rider_data.get('timestamp', datetime.now())
+                    )
+                    db.session.add(rider)
+                db.session.commit()
+                
+                return jsonify({
+                    'success': True,
+                    'restored': True,
+                    'riders_restored': len(backup_data)
+                })
+        
+        return jsonify({
+            'success': True,
+            'restored': False,
+            'message': 'No restore needed'
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/admin/sync-to-cloud', methods=['POST'])
+def sync_to_cloud():
+    """Sync data to Google Drive"""
+    try:
+        if not check_admin_auth():
+            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+        
+        # Get all rider data
+        backup_data = []
+        riders = Registration.query.all()
+        for rider in riders:
+            backup_data.append(rider.to_dict())
+        
+        # Save to Google Drive
+        save_to_google_drive(backup_data)
+        
+        # Also save local backup
+        with open('mtr_backup.json', 'w') as f:
+            json.dump(backup_data, f, indent=2, default=str)
+        
+        return jsonify({
+            'success': True,
+            'message': 'Data synced to cloud successfully',
+            'riders_synced': len(backup_data)
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
 # Initialize database with Google Drive OAuth2 and auto-restore
 with app.app_context():
     # Create tables only if they don't exist

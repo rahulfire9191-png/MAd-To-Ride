@@ -1164,9 +1164,11 @@
             <button class="btn-primary" onclick="showAddCoFounderModal()">👥 Add Co-Founder</button>
             <button class="btn-primary" onclick="showAddCaptainModal()">👥 Add Captain</button>
             <button class="btn-primary" onclick="showAddMemberModal()">➕ Add Member</button>
+            <button class="btn-primary" onclick="showChangePasswordModal()" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">🔐 Change Password</button>
             <button class="btn-primary" onclick="downloadBackup()" style="background: linear-gradient(135deg, #28a745, #20c997);">💾 Download Backup</button>
             <button class="btn-primary" onclick="checkBackupStatus()" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">📊 Backup Status</button>
             <button class="btn-primary" onclick="createBackup()" style="background: linear-gradient(135deg, #17a2b8, #138496);">🔄 Create Backup</button>
+            <button class="btn-primary" onclick="restoreBackup()" style="background: linear-gradient(135deg, #fd7e14, #dc3545);">🔄 Restore Backup</button>
             <button class="btn-primary" onclick="checkCloudStatus()" style="background: linear-gradient(135deg, #4285f4, #f093fb);">☁️ Cloud Status</button>
             <button class="btn-primary" onclick="syncToCloud()" style="background: linear-gradient(135deg, #0ea5e9, #38b2ac);">🔄 Sync to Cloud</button>
           </div>
@@ -2884,6 +2886,17 @@
     }
   }
 
+  // Admin Auto-Login
+  let adminLoggedIn = false;
+  let adminUser = 'Madmax';
+  let adminPassword = 'Admin@123';
+
+  // Auto-login admin on page load
+  function autoLoginAdmin() {
+    adminLoggedIn = true;
+    console.log('Admin auto-logged in as:', adminUser);
+  }
+
   // CEO Unlock Functions
   let ceoUnlocked = false;
 
@@ -2909,8 +2922,8 @@
       return;
     }
 
-    // Validate CEO password
-    if (password === 'Pa$$w0rd@Ceo') {
+    // Validate CEO password - now using same as admin
+    if (password === adminPassword) {
       ceoUnlocked = true;
       closeCeoUnlockModal();
       showCeoEditModal();
@@ -2918,6 +2931,63 @@
       errorEl.textContent = 'Incorrect password. Access denied.';
       errorEl.classList.add('show');
     }
+  }
+
+  // Password Change Function
+  function showChangePasswordModal() {
+    document.getElementById('changePasswordModal').classList.add('active');
+    document.getElementById('oldPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    document.getElementById('changePasswordError').classList.remove('show');
+  }
+
+  function closeChangePasswordModal() {
+    document.getElementById('changePasswordModal').classList.remove('active');
+  }
+
+  function changeAdminPassword() {
+    const oldPass = document.getElementById('oldPassword').value.trim();
+    const newPass = document.getElementById('newPassword').value.trim();
+    const confirmPass = document.getElementById('confirmPassword').value.trim();
+    const errorEl = document.getElementById('changePasswordError');
+
+    if (!oldPass || !newPass || !confirmPass) {
+      errorEl.textContent = 'Please fill in all fields.';
+      errorEl.classList.add('show');
+      return;
+    }
+
+    if (oldPass !== adminPassword) {
+      errorEl.textContent = 'Current password is incorrect.';
+      errorEl.classList.add('show');
+      return;
+    }
+
+    if (newPass !== confirmPass) {
+      errorEl.textContent = 'New passwords do not match.';
+      errorEl.classList.add('show');
+      return;
+    }
+
+    if (newPass.length < 6) {
+      errorEl.textContent = 'Password must be at least 6 characters.';
+      errorEl.classList.add('show');
+      return;
+    }
+
+    // Update password
+    adminPassword = newPass;
+    errorEl.textContent = 'Password changed successfully!';
+    errorEl.classList.remove('error');
+    errorEl.classList.add('success');
+    errorEl.classList.add('show');
+    
+    setTimeout(() => {
+      closeChangePasswordModal();
+      errorEl.classList.remove('success', 'show');
+      errorEl.classList.add('error');
+    }, 2000);
   }
 
   async function showCeoEditModal() {
@@ -3468,9 +3538,148 @@
     }
   }
 
+  // Backup and Restore Functions
+  async function downloadBackup() {
+    try {
+      const response = await fetch('/api/admin/download-backup');
+      if (response.ok) {
+        const blob = await response.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'mtr_backup.json';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        alert('Backup downloaded successfully!');
+      } else {
+        alert('Failed to download backup. Please try again.');
+      }
+    } catch (error) {
+      alert('Error downloading backup: ' + error.message);
+    }
+  }
+
+  async function checkBackupStatus() {
+    try {
+      const response = await fetch('/api/admin/backup-status');
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Backup Status:\n\nLast Backup: ${data.lastBackup || 'Never'}\nTotal Riders: ${data.totalRiders || 0}\nTotal Photos: ${data.totalPhotos || 0}\nCloud Sync: ${data.cloudSynced ? 'Active' : 'Inactive'}`);
+      } else {
+        alert('Failed to check backup status: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error checking backup status: ' + error.message);
+    }
+  }
+
+  async function createBackup() {
+    try {
+      const response = await fetch('/api/admin/create-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        alert('Backup created successfully!');
+        checkBackupStatus(); // Refresh status
+      } else {
+        alert('Failed to create backup: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error creating backup: ' + error.message);
+    }
+  }
+
+  async function restoreBackup() {
+    if (!confirm('Are you sure you want to restore from backup? This will replace all current data.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/restore-backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        alert('Backup restored successfully! Page will reload to show updated data.');
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        alert('Failed to restore backup: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error restoring backup: ' + error.message);
+    }
+  }
+
+  async function checkCloudStatus() {
+    try {
+      const response = await fetch('/api/admin/cloud-status');
+      const data = await response.json();
+      
+      if (data.success) {
+        alert(`Cloud Status:\n\nGoogle Drive: ${data.googleDrive ? 'Connected' : 'Not Connected'}\nLast Sync: ${data.lastSync || 'Never'}\nSync Status: ${data.syncStatus || 'Unknown'}`);
+      } else {
+        alert('Failed to check cloud status: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error checking cloud status: ' + error.message);
+    }
+  }
+
+  async function syncToCloud() {
+    try {
+      const response = await fetch('/api/admin/sync-to-cloud', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        alert('Data synced to cloud successfully!');
+        checkCloudStatus(); // Refresh status
+      } else {
+        alert('Failed to sync to cloud: ' + data.message);
+      }
+    } catch (error) {
+      alert('Error syncing to cloud: ' + error.message);
+    }
+  }
+
+  // Auto-restore data on page load
+  async function autoRestoreData() {
+    try {
+      const response = await fetch('/api/admin/auto-restore', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      const data = await response.json();
+      if (data.success && data.restored) {
+        console.log('Data auto-restored from backup');
+        // Refresh riders display
+        if (typeof loadRegisteredRiders === 'function') {
+          loadRegisteredRiders();
+        }
+      }
+    } catch (error) {
+      console.log('Auto-restore check completed');
+    }
+  }
+
   // Initialize rider selects when page loads
   document.addEventListener('DOMContentLoaded', function() {
     loadRiderSelects();
+    autoLoginAdmin(); // Auto-login admin
+    autoRestoreData(); // Auto-restore data
   });
 </script>
 
@@ -3808,6 +4017,37 @@
       <div class="admin-actions">
         <button onclick="addMember()" class="btn-primary">Add Member</button>
         <button onclick="closeAddMemberModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CHANGE PASSWORD MODAL -->
+<div class="modal-overlay" id="changePasswordModal">
+  <div class="modal-box">
+    <div class="modal-header" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">
+      <h3 style="color: #fff;">Change Admin Password</h3>
+      <button class="modal-close" onclick="closeChangePasswordModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">Current Password *</label>
+          <input type="password" id="oldPassword" class="form-input" placeholder="Enter current password" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Password *</label>
+          <input type="password" id="newPassword" class="form-input" placeholder="Enter new password" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirm New Password *</label>
+          <input type="password" id="confirmPassword" class="form-input" placeholder="Confirm new password" />
+        </div>
+        <div id="changePasswordError" class="form-msg error"></div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="changeAdminPassword()" class="btn-primary" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">Change Password</button>
+        <button onclick="closeChangePasswordModal()" class="btn-secondary">Cancel</button>
       </div>
     </div>
   </div>
