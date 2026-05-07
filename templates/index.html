@@ -3107,7 +3107,711 @@
       document.getElementById('ceoEditError').classList.add('show');
     }
   }
+
+  // Admin Functions - Add all missing functions
+  function showAddRiderModal() {
+    document.getElementById('addRiderModal').classList.add('active');
+  }
+
+  function closeAddRiderModal() {
+    document.getElementById('addRiderModal').classList.remove('active');
+  }
+
+  function showRoleAssignmentModal() {
+    document.getElementById('roleAssignmentModal').classList.add('active');
+  }
+
+  function closeRoleAssignmentModal() {
+    document.getElementById('roleAssignmentModal').classList.remove('active');
+  }
+
+  function showDeleteRiderModal() {
+    document.getElementById('deleteRiderModal').classList.add('active');
+  }
+
+  function closeDeleteRiderModal() {
+    document.getElementById('deleteRiderModal').classList.remove('active');
+  }
+
+  function showEditRiderModal() {
+    document.getElementById('editRiderModal').classList.add('active');
+  }
+
+  function closeEditRiderModal() {
+    document.getElementById('editRiderModal').classList.remove('active');
+  }
+
+  function showAddCoFounderModal() {
+    document.getElementById('addCoFounderModal').classList.add('active');
+  }
+
+  function closeAddCoFounderModal() {
+    document.getElementById('addCoFounderModal').classList.remove('active');
+  }
+
+  function showAddCaptainModal() {
+    document.getElementById('addCaptainModal').classList.add('active');
+  }
+
+  function closeAddCaptainModal() {
+    document.getElementById('addCaptainModal').classList.remove('active');
+  }
+
+  function showAddMemberModal() {
+    document.getElementById('addMemberModal').classList.add('active');
+  }
+
+  function closeAddMemberModal() {
+    document.getElementById('addMemberModal').classList.remove('active');
+  }
+
+  function closeCeoEditModal() {
+    document.getElementById('ceoEditModal').classList.remove('active');
+  }
+
+  // Admin Operation Functions
+  async function addNewRider() {
+    const firstName = document.getElementById('addRiderFirstName').value.trim();
+    const lastName = document.getElementById('addRiderLastName').value.trim();
+    const alias = document.getElementById('addRiderAlias').value.trim();
+    const bike = document.getElementById('addRiderBike').value.trim();
+    const city = document.getElementById('addRiderCity').value.trim();
+    const instagram = document.getElementById('addRiderInstagram').value.trim();
+    const experience = document.getElementById('addRiderExperience').value;
+    const role = document.getElementById('addRiderRole').value;
+
+    if (!firstName || !lastName || !alias || !bike || !city || !experience || !role) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/add-rider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName, lastName, alias, bike, city, instagram, experience, role
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Rider added successfully!');
+        closeAddRiderModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function loadRiderSelects() {
+    try {
+      const response = await fetch('/api/riders');
+      const riders = await response.json();
+      
+      const selects = ['roleRiderSelect', 'deleteRiderSelect', 'editRiderSelect'];
+      selects.forEach(selectId => {
+        const select = document.getElementById(selectId);
+        if (select) {
+          select.innerHTML = '<option value="">Choose a rider...</option>';
+          riders.forEach(rider => {
+            const option = document.createElement('option');
+            option.value = rider.id;
+            option.textContent = `${rider.firstName} ${rider.lastName} (${rider.alias})`;
+            select.appendChild(option);
+          });
+        }
+      });
+    } catch (error) {
+      console.error('Error loading riders:', error);
+    }
+  }
+
+  async function loadEditRiderData() {
+    const select = document.getElementById('editRiderSelect');
+    const riderId = select.value;
+    
+    if (!riderId) return;
+    
+    try {
+      const response = await fetch(`/api/riders/${riderId}`);
+      const rider = await response.json();
+      
+      // Populate edit form
+      document.getElementById('editRiderFirstName').value = rider.firstName || '';
+      document.getElementById('editRiderLastName').value = rider.lastName || '';
+      document.getElementById('editRiderAlias').value = rider.alias || '';
+      document.getElementById('editRiderBike').value = rider.bike || '';
+      document.getElementById('editRiderCity').value = rider.city || '';
+      document.getElementById('editRiderInstagram').value = rider.instagram || '';
+      document.getElementById('editRiderExperience').value = rider.experience || 'Less than 1 year';
+    } catch (error) {
+      console.error('Error loading rider data:', error);
+    }
+  }
+
+  async function updateRider() {
+    const riderId = document.getElementById('editRiderSelect').value;
+    const firstName = document.getElementById('editRiderFirstName').value.trim();
+    const lastName = document.getElementById('editRiderLastName').value.trim();
+    const alias = document.getElementById('editRiderAlias').value.trim();
+    const bike = document.getElementById('editRiderBike').value.trim();
+    const city = document.getElementById('editRiderCity').value.trim();
+    const instagram = document.getElementById('editRiderInstagram').value.trim();
+    const experience = document.getElementById('editRiderExperience').value;
+
+    if (!riderId || !firstName || !lastName || !alias || !bike || !city || !experience) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/update-rider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          riderId, firstName, lastName, alias, bike, city, instagram, experience
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Rider updated successfully!');
+        closeEditRiderModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function updateRiderRole() {
+    const riderId = document.getElementById('roleRiderSelect').value;
+    const newRole = document.getElementById('newRoleSelect').value;
+    const priority = document.getElementById('rolePriority').value;
+
+    if (!riderId || !newRole || !priority) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/update-rider-role', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          riderId, role: newRole, priority: parseInt(priority)
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Rider role updated successfully!');
+        closeRoleAssignmentModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function deleteRider() {
+    const riderId = document.getElementById('deleteRiderSelect').value;
+    const confirmation = document.getElementById('deleteConfirmation').value.trim();
+
+    if (!riderId) {
+      alert('Please select a rider to delete.');
+      return;
+    }
+
+    if (confirmation !== 'DELETE') {
+      alert('Please type "DELETE" to confirm deletion.');
+      return;
+    }
+
+    if (!confirm('Are you sure you want to delete this rider? This action cannot be undone.')) {
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/delete-rider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ riderId })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Rider deleted successfully!');
+        closeDeleteRiderModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function addCoFounder() {
+    const firstName = document.getElementById('cofounderFirstName').value.trim();
+    const lastName = document.getElementById('cofounderLastName').value.trim();
+    const alias = document.getElementById('cofounderAlias').value.trim();
+    const bike = document.getElementById('cofounderBike').value.trim();
+    const city = document.getElementById('cofounderCity').value.trim();
+    const instagram = document.getElementById('cofounderInstagram').value.trim();
+    const experience = document.getElementById('cofounderExperience').value;
+
+    if (!firstName || !lastName || !alias || !bike || !city || !experience) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/add-cofounder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName, lastName, alias, bike, city, instagram, experience
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Co-Founder added successfully!');
+        closeAddCoFounderModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function addCaptain() {
+    const firstName = document.getElementById('captainFirstName').value.trim();
+    const lastName = document.getElementById('captainLastName').value.trim();
+    const alias = document.getElementById('captainAlias').value.trim();
+    const bike = document.getElementById('captainBike').value.trim();
+    const city = document.getElementById('captainCity').value.trim();
+    const instagram = document.getElementById('captainInstagram').value.trim();
+    const experience = document.getElementById('captainExperience').value;
+
+    if (!firstName || !lastName || !alias || !bike || !city || !experience) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/add-captain', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName, lastName, alias, bike, city, instagram, experience
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Captain added successfully!');
+        closeAddCaptainModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  async function addMember() {
+    const firstName = document.getElementById('memberFirstName').value.trim();
+    const lastName = document.getElementById('memberLastName').value.trim();
+    const alias = document.getElementById('memberAlias').value.trim();
+    const bike = document.getElementById('memberBike').value.trim();
+    const city = document.getElementById('memberCity').value.trim();
+    const instagram = document.getElementById('memberInstagram').value.trim();
+    const experience = document.getElementById('memberExperience').value;
+
+    if (!firstName || !lastName || !alias || !bike || !city || !experience) {
+      alert('Please fill in all required fields.');
+      return;
+    }
+
+    try {
+      const response = await fetch('/api/admin/add-member', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          firstName, lastName, alias, bike, city, instagram, experience
+        })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        alert('Member added successfully!');
+        closeAddMemberModal();
+        loadRegisteredRiders(); // Refresh riders list
+      } else {
+        alert('Error: ' + data.message);
+      }
+    } catch (error) {
+      alert('Network error. Please try again.');
+    }
+  }
+
+  // Initialize rider selects when page loads
+  document.addEventListener('DOMContentLoaded', function() {
+    loadRiderSelects();
+  });
 </script>
+
+<!-- ADD RIDER MODAL -->
+<div class="modal-overlay" id="addRiderModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Add New Rider</h3>
+      <button class="modal-close" onclick="closeAddRiderModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="addRiderFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="addRiderLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="addRiderAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="addRiderBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="addRiderCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="addRiderInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="addRiderExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Role *</label>
+          <select id="addRiderRole" class="form-input">
+            <option value="Member">Member</option>
+            <option value="Captain">Captain</option>
+            <option value="Co-Founder">Co-Founder</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="addNewRider()" class="btn-primary">Add Rider</button>
+        <button onclick="closeAddRiderModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ROLE ASSIGNMENT MODAL -->
+<div class="modal-overlay" id="roleAssignmentModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Assign Rider Role</h3>
+      <button class="modal-close" onclick="closeRoleAssignmentModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">Select Rider *</label>
+          <select id="roleRiderSelect" class="form-input">
+            <option value="">Choose a rider...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">New Role *</label>
+          <select id="newRoleSelect" class="form-input">
+            <option value="Member">Member</option>
+            <option value="Captain">Captain</option>
+            <option value="Co-Founder">Co-Founder</option>
+            <option value="CEO">CEO</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Priority (1=highest)</label>
+          <input type="number" id="rolePriority" class="form-input" placeholder="1" min="1" max="10" />
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="updateRiderRole()" class="btn-primary">Update Role</button>
+        <button onclick="closeRoleAssignmentModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DELETE RIDER MODAL -->
+<div class="modal-overlay" id="deleteRiderModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Delete Rider</h3>
+      <button class="modal-close" onclick="closeDeleteRiderModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">Select Rider to Delete *</label>
+          <select id="deleteRiderSelect" class="form-input">
+            <option value="">Choose a rider...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Confirmation</label>
+          <input type="text" id="deleteConfirmation" class="form-input" placeholder="Type 'DELETE' to confirm" />
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="deleteRider()" class="btn-primary" style="background: linear-gradient(135deg, #dc3545, #c82333);">Delete Rider</button>
+        <button onclick="closeDeleteRiderModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- EDIT RIDER MODAL -->
+<div class="modal-overlay" id="editRiderModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Edit Rider</h3>
+      <button class="modal-close" onclick="closeEditRiderModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">Select Rider *</label>
+          <select id="editRiderSelect" class="form-input" onchange="loadEditRiderData()">
+            <option value="">Choose a rider...</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="editRiderFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="editRiderLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="editRiderAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="editRiderBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="editRiderCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="editRiderInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="editRiderExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="updateRider()" class="btn-primary">Update Rider</button>
+        <button onclick="closeEditRiderModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CO-FOUNDER MODAL -->
+<div class="modal-overlay" id="addCoFounderModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Add Co-Founder</h3>
+      <button class="modal-close" onclick="closeAddCoFounderModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="cofounderFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="cofounderLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="cofounderAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="cofounderBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="cofounderCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="cofounderInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="cofounderExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="addCoFounder()" class="btn-primary">Add Co-Founder</button>
+        <button onclick="closeAddCoFounderModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD CAPTAIN MODAL -->
+<div class="modal-overlay" id="addCaptainModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Add Captain</h3>
+      <button class="modal-close" onclick="closeAddCaptainModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="captainFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="captainLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="captainAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="captainBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="captainCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="captainInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="captainExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="addCaptain()" class="btn-primary">Add Captain</button>
+        <button onclick="closeAddCaptainModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADD MEMBER MODAL -->
+<div class="modal-overlay" id="addMemberModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3>Add Member</h3>
+      <button class="modal-close" onclick="closeAddMemberModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="memberFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="memberLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="memberAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="memberBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="memberCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="memberInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="memberExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="addMember()" class="btn-primary">Add Member</button>
+        <button onclick="closeAddMemberModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <!-- CEO UNLOCK MODAL -->
 <div class="modal-overlay" id="ceoUnlockModal">
