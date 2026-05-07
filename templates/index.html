@@ -1196,24 +1196,7 @@
           <li><a href="#riders" class="nav-link" onclick="closeMobileMenu()">Riders</a></li>
           <li><a href="#gallery" class="nav-link" onclick="closeMobileMenu()">Gallery</a></li>
           <li><a href="#contact" class="nav-link" onclick="closeMobileMenu()">Contact</a></li>
-          <li><button onclick="toggleAdminPanel()" class="nav-admin" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 16px;cursor:pointer;transition:all 0.2s;"> Admin</button>
-          <div class="admin-actions">
-            <button class="btn-primary" onclick="showAddRiderModal()">➕ Add Rider</button>
-            <button class="btn-primary" onclick="showRoleAssignmentModal()">👥 Assign Role</button>
-            <button class="btn-primary" onclick="showDeleteRiderModal()">🗑️ Delete Rider</button>
-            <button class="btn-primary" onclick="showEditRiderModal()">✏️ Edit Rider</button>
-            <button class="btn-primary" onclick="showCeoEditModal()">👑 Edit CEO</button>
-            <button class="btn-primary" onclick="showAddCoFounderModal()">👥 Add Co-Founder</button>
-            <button class="btn-primary" onclick="showAddCaptainModal()">👥 Add Captain</button>
-            <button class="btn-primary" onclick="showAddMemberModal()">➕ Add Member</button>
-            <button class="btn-primary" onclick="showChangePasswordModal()" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">🔐 Change Password</button>
-            <button class="btn-primary" onclick="downloadBackup()" style="background: linear-gradient(135deg, #28a745, #20c997);">💾 Download Backup</button>
-            <button class="btn-primary" onclick="checkBackupStatus()" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">📊 Backup Status</button>
-            <button class="btn-primary" onclick="createBackup()" style="background: linear-gradient(135deg, #17a2b8, #138496);">🔄 Create Backup</button>
-            <button class="btn-primary" onclick="restoreBackup()" style="background: linear-gradient(135deg, #fd7e14, #dc3545);">🔄 Restore Backup</button>
-            <button class="btn-primary" onclick="checkCloudStatus()" style="background: linear-gradient(135deg, #4285f4, #f093fb);">☁️ Cloud Status</button>
-            <button class="btn-primary" onclick="syncToCloud()" style="background: linear-gradient(135deg, #0ea5e9, #38b2ac);">🔄 Sync to Cloud</button>
-          </div>
+          <li><button onclick="toggleAdminPanel()" class="nav-admin" style="background:transparent;border:1px solid var(--border);color:var(--muted);font-family:'Barlow Condensed',sans-serif;font-size:0.85rem;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 16px;cursor:pointer;transition:all 0.2s;"> Admin</button></li>
         </li>
         </ul>
       </div>
@@ -1421,6 +1404,66 @@
   </div>
 </section>
 
+<!-- ADMIN DASHBOARD -->
+<section id="adminDashboard" style="display: none; padding: 80px 48px; background: var(--darker);">
+  <div class="section-tag">ADMIN CONTROL PANEL</div>
+  <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+    <h1 class="section-title" style="margin: 0;">Admin Dashboard</h1>
+    <button onclick="backToMainSite()" class="btn-secondary" style="background: var(--mid); border: 1px solid var(--border);">← Back to Main Site</button>
+  </div>
+  <div class="section-divider"></div>
+  
+  <div style="max-width: 1200px; margin: 0 auto;">
+    <!-- CEO Login Section -->
+    <div class="admin-section" style="background: linear-gradient(135deg, rgba(255,215,0,0.1), rgba(255,107,0,0.05)); border: 1px solid rgba(255,215,0,0.3);">
+      <h4 style="color: var(--gold); margin-bottom: 20px;">👑 CEO/Founder Access</h4>
+      <p style="color: var(--muted); margin-bottom: 20px;">Secure access to edit CEO/Founder profile information</p>
+      <button onclick="showCeoUnlockModal()" class="btn-primary" style="background: linear-gradient(135deg, var(--gold), var(--orange)); min-width: 200px;">🔑 Unlock CEO Profile</button>
+    </div>
+
+    <!-- Rider Management -->
+    <div class="admin-section">
+      <h4>🏍️ Rider Management</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <button onclick="showAddRiderModal()" class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997);">➕ Add Rider</button>
+        <button onclick="showEditRiderModal()" class="btn-primary" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">✏️ Edit Rider</button>
+        <button onclick="showDeleteRiderModal()" class="btn-primary" style="background: linear-gradient(135deg, #dc3545, #c82333);">🗑️ Delete Rider</button>
+        <button onclick="showRoleAssignmentModal()" class="btn-primary" style="background: linear-gradient(135deg, #fd7e14, #e67e22);">👥 Assign Role</button>
+      </div>
+    </div>
+
+    <!-- Team Management -->
+    <div class="admin-section">
+      <h4>👥 Team Management</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <button onclick="showAddCoFounderModal()" class="btn-primary" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">👥 Add Co-Founder</button>
+        <button onclick="showAddCaptainModal()" class="btn-primary" style="background: linear-gradient(135deg, #0ea5e9, #38b2ac);">👥 Add Captain</button>
+        <button onclick="showAddMemberModal()" class="btn-primary" style="background: linear-gradient(135deg, #17a2b8, #138496);">➕ Add Member</button>
+      </div>
+    </div>
+
+    <!-- Security Settings -->
+    <div class="admin-section">
+      <h4>🔐 Security Settings</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <button onclick="showChangePasswordModal()" class="btn-primary" style="background: linear-gradient(135deg, #ff6b6b, #ee5a24);">🔐 Change Admin Password</button>
+      </div>
+    </div>
+
+    <!-- Backup & Sync -->
+    <div class="admin-section">
+      <h4>💾 Backup & Cloud Sync</h4>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+        <button onclick="downloadBackup()" class="btn-primary" style="background: linear-gradient(135deg, #28a745, #20c997);">💾 Download Backup</button>
+        <button onclick="checkBackupStatus()" class="btn-primary" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">📊 Backup Status</button>
+        <button onclick="createBackup()" class="btn-primary" style="background: linear-gradient(135deg, #17a2b8, #138496);">🔄 Create Backup</button>
+        <button onclick="restoreBackup()" class="btn-primary" style="background: linear-gradient(135deg, #fd7e14, #dc3545);">🔄 Restore Backup</button>
+        <button onclick="checkCloudStatus()" class="btn-primary" style="background: linear-gradient(135deg, #4285f4, #f093fb);">☁️ Cloud Status</button>
+        <button onclick="syncToCloud()" class="btn-primary" style="background: linear-gradient(135deg, #0ea5e9, #38b2ac);">🔄 Sync to Cloud</button>
+      </div>
+    </div>
+  </div>
+</section>
 
 <!-- Rider Information Modal -->
 <div id="riderModal" class="modal" style="display: none;">
@@ -2922,14 +2965,37 @@
       return;
     }
     
-    const adminActions = document.querySelector('.admin-actions');
-    if (adminPanelOpen) {
-      adminActions.classList.remove('active');
-      adminPanelOpen = false;
-    } else {
-      adminActions.classList.add('active');
-      adminPanelOpen = true;
+    // Hide hero section and show admin dashboard
+    const heroSection = document.getElementById('home');
+    const adminDashboard = document.getElementById('adminDashboard');
+    
+    if (heroSection) {
+      heroSection.style.display = 'none';
     }
+    
+    if (adminDashboard) {
+      adminDashboard.style.display = 'block';
+    }
+    
+    // Scroll to admin dashboard
+    adminDashboard.scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function backToMainSite() {
+    // Hide admin dashboard and show hero section
+    const heroSection = document.getElementById('home');
+    const adminDashboard = document.getElementById('adminDashboard');
+    
+    if (adminDashboard) {
+      adminDashboard.style.display = 'none';
+    }
+    
+    if (heroSection) {
+      heroSection.style.display = 'block';
+    }
+    
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   // Admin Authentication
