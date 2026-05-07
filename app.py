@@ -961,7 +961,6 @@ with app.app_context():
                     db.session.add(rider)
                 db.session.commit()
                 print(f"Restored {len(riders_data)} riders from backup")
-                return
         except Exception as e:
             print(f"Backup restore failed: {e}")
     
