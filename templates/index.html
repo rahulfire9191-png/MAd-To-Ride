@@ -1122,6 +1122,8 @@
             <button class="btn-primary" onclick="downloadBackup()" style="background: linear-gradient(135deg, #28a745, #20c997);">💾 Download Backup</button>
             <button class="btn-primary" onclick="checkBackupStatus()" style="background: linear-gradient(135deg, #6f42c1, #e74c3c);">📊 Backup Status</button>
             <button class="btn-primary" onclick="createBackup()" style="background: linear-gradient(135deg, #17a2b8, #138496);">🔄 Create Backup</button>
+            <button class="btn-primary" onclick="checkCloudStatus()" style="background: linear-gradient(135deg, #4285f4, #f093fb);">☁️ Cloud Status</button>
+            <button class="btn-primary" onclick="syncToCloud()" style="background: linear-gradient(135deg, #0ea5e9, #38b2ac);">🔄 Sync to Cloud</button>
           </div>
         </li>
         </ul>
@@ -3036,6 +3038,7 @@
         ceoUnlocked = false; // Reset unlock status
         // Refresh the riders display
         loadRegisteredRiders();
+        syncToCloud(); // Add this line to call the syncToCloud function
       } else {
         document.getElementById('ceoEditError').textContent = data.message;
         document.getElementById('ceoEditError').classList.add('show');

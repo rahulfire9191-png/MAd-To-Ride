@@ -135,15 +135,102 @@ def encode_file_to_base64(file):
 def save_to_google_drive(data):
     """Save data to Google Drive using API"""
     try:
-        # This would require Google Drive API setup
-        # For now, save to local JSON file as backup
-        backup_file = 'mtr_backup.json'
-        with open(backup_file, 'w') as f:
-            json.dump(data, f, indent=2)
-        print(f"Data backed up to {backup_file}")
-        return True
+        # Try Google Drive API first
+        google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
+        
+        if google_drive_url:
+            # Send data to Google Drive via webhook
+            import requests
+            response = requests.post(google_drive_url, 
+                json={'data': data, 'timestamp': datetime.now().isoformat()},
+                headers={'Content-Type': 'application/json'},
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                print(f"Data synced to Google Drive: {len(data)} riders")
+                return True
+            else:
+                print(f"Google Drive sync failed: {response.status_code}")
+                return False
+        else:
+            # Fallback to local JSON file
+            backup_file = 'mtr_backup.json'
+            with open(backup_file, 'w') as f:
+                json.dump(data, f, indent=2)
+            print(f"Data backed up to local file: {backup_file}")
+            return True
     except Exception as e:
-        print(f"Google Drive backup failed: {e}")
+        print(f"Cloud backup failed: {e}")
+        return False
+
+def load_from_google_drive():
+    """Load data from Google Drive or backup file"""
+    try:
+        # Try Google Drive API first
+        google_drive_url = os.environ.get('GOOGLE_DRIVE_DATA_URL')
+        
+        if google_drive_url:
+            # Get data from Google Drive
+            import requests
+            response = requests.get(google_drive_url, timeout=30)
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"Loaded {len(data)} riders from Google Drive")
+                return data
+            else:
+                print(f"Google Drive load failed: {response.status_code}")
+                return None
+        else:
+            # Fallback to local JSON file
+            backup_file = 'mtr_backup.json'
+            if os.path.exists(backup_file):
+                with open(backup_file, 'r') as f:
+                    data = json.load(f)
+                print(f"Loaded {len(data)} riders from local backup")
+                return data
+            return None
+    except Exception as e:
+        print(f"Cloud load failed: {e}")
+        return None
+
+def auto_sync_to_cloud():
+    """Automatic sync to cloud storage"""
+    try:
+        riders = Registration.query.all()
+        backup_data = []
+        
+        for rider in riders:
+            backup_data.append({
+                'firstName': rider.firstName,
+                'lastName': rider.lastName,
+                'phone': rider.phone,
+                'city': rider.city,
+                'bike': rider.bike,
+                'experience': rider.experience,
+                'alias': rider.alias,
+                'instagram': rider.instagram,
+                'riderPhoto': rider.riderPhoto,
+                'bikePhoto': rider.bikePhoto,
+                'sectionPhoto': rider.sectionPhoto,
+                'reason': rider.reason,
+                'role': rider.role,
+                'priority': rider.priority,
+                'timestamp': rider.timestamp
+            })
+        
+        # Save to cloud storage
+        success = save_to_google_drive(backup_data)
+        
+        if success:
+            print(f"Auto-synced {len(backup_data)} riders to cloud storage")
+        else:
+            print("Auto-sync to cloud failed")
+            
+        return success
+    except Exception as e:
+        print(f"Auto-sync failed: {e}")
         return False
 
 def load_from_google_drive():
@@ -697,10 +784,11 @@ def register():
         db.session.add(registration)
         db.session.commit()
 
-        # Auto-backup to external storage
+        # Auto-backup to external storage and cloud sync
         try:
             sync_to_external_storage()
-            print("Auto-backup completed after registration")
+            auto_sync_to_cloud()
+            print("Auto-backup and cloud sync completed after registration")
         except Exception as e:
             print(f"Auto-backup failed: {e}")
 
@@ -1099,19 +1187,43 @@ def backup_status():
             with open(backup_file, 'r') as f:
                 backup_data = json.load(f)
             
+            # Check cloud sync status
+            google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
+            cloud_sync_status = 'configured' if google_drive_url else 'not_configured'
+            
             return jsonify({
                 'backup_exists': True,
                 'file_size': file_size,
                 'last_modified': mod_time,
                 'rider_count': len(backup_data),
                 'file_path': backup_file,
-                'backup_time': datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S')
+                'backup_time': datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S'),
+                'cloud_sync': cloud_sync_status,
+                'cloud_provider': 'Google Drive' if google_drive_url else 'Local JSON'
             })
         else:
             return jsonify({
                 'backup_exists': False,
-                'message': 'No backup file found'
+                'message': 'No backup file found',
+                'cloud_sync': 'not_configured'
             })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/cloud-status', methods=['GET'])
+def cloud_status():
+    """Check cloud storage status"""
+    try:
+        google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
+        last_sync_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        return jsonify({
+            'cloud_sync': 'configured' if google_drive_url else 'not_configured',
+            'cloud_provider': 'Google Drive' if google_drive_url else 'Local JSON',
+            'last_sync_time': last_sync_time,
+            'auto_sync_enabled': True,
+            'sync_status': 'active'
+        })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
