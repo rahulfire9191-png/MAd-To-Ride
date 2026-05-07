@@ -2876,6 +2876,10 @@
   let adminPanelOpen = false;
 
   function toggleAdminPanel() {
+    if (!checkAdminAuth()) {
+      return;
+    }
+    
     const adminActions = document.querySelector('.admin-actions');
     if (adminPanelOpen) {
       adminActions.classList.remove('active');
@@ -2886,15 +2890,49 @@
     }
   }
 
-  // Admin Auto-Login
+  // Admin Authentication
   let adminLoggedIn = false;
   let adminUser = 'Madmax';
   let adminPassword = 'Admin@123';
 
-  // Auto-login admin on page load
-  function autoLoginAdmin() {
-    adminLoggedIn = true;
-    console.log('Admin auto-logged in as:', adminUser);
+  function showAdminLoginModal() {
+    document.getElementById('adminLoginModal').classList.add('active');
+    document.getElementById('adminUsername').value = '';
+    document.getElementById('adminPassword').value = '';
+    document.getElementById('adminLoginError').classList.remove('show');
+  }
+
+  function closeAdminLoginModal() {
+    document.getElementById('adminLoginModal').classList.remove('active');
+  }
+
+  function adminLogin() {
+    const username = document.getElementById('adminUsername').value.trim();
+    const password = document.getElementById('adminPassword').value.trim();
+    const errorEl = document.getElementById('adminLoginError');
+
+    if (!username || !password) {
+      errorEl.textContent = 'Please enter username and password.';
+      errorEl.classList.add('show');
+      return;
+    }
+
+    if (username === adminUser && password === adminPassword) {
+      adminLoggedIn = true;
+      closeAdminLoginModal();
+      console.log('Admin logged in successfully');
+    } else {
+      errorEl.textContent = 'Invalid username or password.';
+      errorEl.classList.add('show');
+    }
+  }
+
+  function checkAdminAuth() {
+    if (!adminLoggedIn) {
+      showAdminLoginModal();
+      return false;
+    }
+    return true;
   }
 
   // CEO Unlock Functions
@@ -2912,38 +2950,80 @@
     document.getElementById('ceoUnlockError').classList.remove('show');
   }
 
-  function unlockCeoProfile() {
-    const password = document.getElementById('ceoPassword').value.trim();
-    const errorEl = document.getElementById('ceoUnlockError');
-
-    if (!password) {
-      errorEl.textContent = 'Please enter the CEO password.';
-      errorEl.classList.add('show');
-      return;
-    }
-
-    // Validate CEO password - now using same as admin
-    if (password === adminPassword) {
-      ceoUnlocked = true;
-      closeCeoUnlockModal();
-      showCeoEditModal();
-    } else {
-      errorEl.textContent = 'Incorrect password. Access denied.';
-      errorEl.classList.add('show');
-    }
-  }
-
-  // Password Change Function
-  function showChangePasswordModal() {
-    document.getElementById('changePasswordModal').classList.add('active');
-    document.getElementById('oldPassword').value = '';
-    document.getElementById('newPassword').value = '';
     document.getElementById('confirmPassword').value = '';
     document.getElementById('changePasswordError').classList.remove('show');
   }
 
   function closeChangePasswordModal() {
     document.getElementById('changePasswordModal').classList.remove('active');
+  }
+
+  function closeCeoEditModal() {
+    document.getElementById('ceoEditModal').classList.remove('active');
+  }
+
+  async function updateCeoProfile() {
+    if (!ceoUnlocked) {
+      alert('CEO access not unlocked. Please unlock first.');
+      return;
+    }
+
+    try {
+      const firstName = document.getElementById('ceoFirstName').value.trim();
+      const lastName = document.getElementById('ceoLastName').value.trim();
+      const alias = document.getElementById('ceoAlias').value.trim();
+      const bike = document.getElementById('ceoBike').value.trim();
+      const city = document.getElementById('ceoCity').value.trim();
+      const instagram = document.getElementById('ceoInstagram').value.trim();
+      const experience = document.getElementById('ceoExperience').value;
+
+      if (!firstName || !lastName || !alias || !bike || !city || !experience) {
+        const errorEl = document.getElementById('ceoEditError');
+        if (errorEl) {
+          errorEl.textContent = 'Please fill in all required fields.';
+          errorEl.classList.add('show');
+        }
+        return;
+      }
+
+      // Find CEO rider data
+      const response = await fetch('/api/riders');
+      const registrations = await response.json();
+      const ceoRider = registrations.find(r => r.priority === 1 || (r.firstName.toLowerCase() === 'rahul' && r.lastName.toLowerCase() === 'choudhari'));
+
+      if (!ceoRider) {
+        alert('CEO rider not found.');
+        return;
+      }
+
+      // Update CEO profile
+      const updateResponse = await fetch('/api/update-rider', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          riderId: ceoRider.id,
+          firstName, lastName, alias, bike, city, instagram, experience
+        })
+      });
+
+      const updateData = await updateResponse.json();
+      if (updateData.success) {
+        alert('CEO profile updated successfully!');
+        closeCeoEditModal();
+        // Refresh riders display
+        if (typeof loadRegisteredRiders === 'function') {
+          loadRegisteredRiders();
+        }
+      } else {
+        const errorEl = document.getElementById('ceoEditError');
+        if (errorEl) {
+          errorEl.textContent = 'Error: ' + updateData.message;
+          errorEl.classList.add('show');
+        }
+      }
+    } catch (error) {
+      alert('Error updating CEO profile: ' + error.message);
+    }
   }
 
   function changeAdminPassword() {
@@ -3541,7 +3621,7 @@
   // Backup and Restore Functions
   async function downloadBackup() {
     try {
-      const response = await fetch('/api/admin/download-backup');
+      const response = await fetch('/api/download-backup');
       if (response.ok) {
         const blob = await response.blob();
         const url = window.URL.createObjectURL(blob);
@@ -3554,7 +3634,8 @@
         window.URL.revokeObjectURL(url);
         alert('Backup downloaded successfully!');
       } else {
-        alert('Failed to download backup. Please try again.');
+        const errorData = await response.json().catch(() => ({}));
+        alert('Failed to download backup: ' + (errorData.error || 'Please try again.'));
       }
     } catch (error) {
       alert('Error downloading backup: ' + error.message);
@@ -3563,13 +3644,13 @@
 
   async function checkBackupStatus() {
     try {
-      const response = await fetch('/api/admin/backup-status');
+      const response = await fetch('/api/backup-status');
       const data = await response.json();
       
       if (data.success) {
-        alert(`Backup Status:\n\nLast Backup: ${data.lastBackup || 'Never'}\nTotal Riders: ${data.totalRiders || 0}\nTotal Photos: ${data.totalPhotos || 0}\nCloud Sync: ${data.cloudSynced ? 'Active' : 'Inactive'}`);
+        alert(`Backup Status:\n\nLast Backup: ${data.lastBackup || 'Never'}\nTotal Riders: ${data.totalRiders || 0}\nTotal Photos: ${data.totalPhotos || 0}\nCloud Sync: ${data.cloud_sync === 'configured' ? 'Active' : 'Inactive'}`);
       } else {
-        alert('Failed to check backup status: ' + data.message);
+        alert('Failed to check backup status: ' + (data.error || data.message || 'Unknown error'));
       }
     } catch (error) {
       alert('Error checking backup status: ' + error.message);
@@ -3588,7 +3669,7 @@
         alert('Backup created successfully!');
         checkBackupStatus(); // Refresh status
       } else {
-        alert('Failed to create backup: ' + data.message);
+        alert('Failed to create backup: ' + (data.message || 'Unknown error'));
       }
     } catch (error) {
       alert('Error creating backup: ' + error.message);
@@ -3613,7 +3694,7 @@
           window.location.reload();
         }, 2000);
       } else {
-        alert('Failed to restore backup: ' + data.message);
+        alert('Failed to restore backup: ' + (data.message || 'Unknown error'));
       }
     } catch (error) {
       alert('Error restoring backup: ' + error.message);
@@ -3622,13 +3703,13 @@
 
   async function checkCloudStatus() {
     try {
-      const response = await fetch('/api/admin/cloud-status');
-      const data = await response.json();
+      const response = await fetch('/api/cloud-status');
+      const data = await response.json().catch(() => ({}));
       
       if (data.success) {
-        alert(`Cloud Status:\n\nGoogle Drive: ${data.googleDrive ? 'Connected' : 'Not Connected'}\nLast Sync: ${data.lastSync || 'Never'}\nSync Status: ${data.syncStatus || 'Unknown'}`);
+        alert(`Cloud Status:\n\nGoogle Drive: ${data.google_drive ? 'Connected' : 'Not Connected'}\nLast Sync: ${data.last_sync || 'Never'}\nSync Status: ${data.sync_status || 'Active'}`);
       } else {
-        alert('Failed to check cloud status: ' + data.message);
+        alert('Failed to check cloud status: ' + (data.error || data.message || 'Unknown error'));
       }
     } catch (error) {
       alert('Error checking cloud status: ' + error.message);
@@ -3647,7 +3728,7 @@
         alert('Data synced to cloud successfully!');
         checkCloudStatus(); // Refresh status
       } else {
-        alert('Failed to sync to cloud: ' + data.message);
+        alert('Failed to sync to cloud: ' + (data.message || 'Unknown error'));
       }
     } catch (error) {
       alert('Error syncing to cloud: ' + error.message);
@@ -3678,7 +3759,7 @@
   // Initialize rider selects when page loads
   document.addEventListener('DOMContentLoaded', function() {
     loadRiderSelects();
-    autoLoginAdmin(); // Auto-login admin
+    // Remove auto-login - admin must login manually now
     autoRestoreData(); // Auto-restore data
   });
 </script>
@@ -4022,6 +4103,33 @@
   </div>
 </div>
 
+<!-- ADMIN LOGIN MODAL -->
+<div class="modal-overlay" id="adminLoginModal">
+  <div class="modal-box">
+    <div class="modal-header" style="background: linear-gradient(135deg, #e74c3c, #c0392b);">
+      <h3 style="color: #fff;">Admin Login</h3>
+      <button class="modal-close" onclick="closeAdminLoginModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">Username *</label>
+          <input type="text" id="adminUsername" class="form-input" placeholder="Enter username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password *</label>
+          <input type="password" id="adminPassword" class="form-input" placeholder="Enter password" />
+        </div>
+        <div id="adminLoginError" class="form-msg error"></div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="adminLogin()" class="btn-primary" style="background: linear-gradient(135deg, #e74c3c, #c0392b);">Login</button>
+        <button onclick="closeAdminLoginModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- CHANGE PASSWORD MODAL -->
 <div class="modal-overlay" id="changePasswordModal">
   <div class="modal-box">
@@ -4078,6 +4186,59 @@
       <div class="admin-actions" style="margin-top: 20px;">
         <button onclick="unlockCeoProfile()" class="btn-primary" style="background: linear-gradient(135deg, var(--gold), var(--orange)); border: none;">Unlock Profile</button>
         <button onclick="closeCeoUnlockModal()" class="btn-secondary">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CEO EDIT MODAL -->
+<div class="modal-overlay" id="ceoEditModal">
+  <div class="modal-box">
+    <div class="modal-header" style="background: linear-gradient(135deg, var(--gold), var(--orange));">
+      <h3 style="color: #fff;">Edit CEO/Founder Profile</h3>
+      <button class="modal-close" onclick="closeCeoEditModal()">×</button>
+    </div>
+    <div class="modal-content">
+      <div class="admin-form">
+        <div class="form-group">
+          <label class="form-label">First Name *</label>
+          <input type="text" id="ceoFirstName" class="form-input" placeholder="Enter first name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Last Name *</label>
+          <input type="text" id="ceoLastName" class="form-input" placeholder="Enter last name" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Riding Alias *</label>
+          <input type="text" id="ceoAlias" class="form-input" placeholder="Enter riding alias" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Bike Details *</label>
+          <input type="text" id="ceoBike" class="form-input" placeholder="e.g., KTM Duke 390" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">City *</label>
+          <input type="text" id="ceoCity" class="form-input" placeholder="Enter city" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Instagram Handle</label>
+          <input type="text" id="ceoInstagram" class="form-input" placeholder="@username" />
+        </div>
+        <div class="form-group">
+          <label class="form-label">Experience *</label>
+          <select id="ceoExperience" class="form-input">
+            <option value="Less than 1 year">Less than 1 year</option>
+            <option value="1-3 years">1-3 years</option>
+            <option value="3-5 years">3-5 years</option>
+            <option value="5-10 years">5-10 years</option>
+            <option value="10+ years">10+ years</option>
+          </select>
+        </div>
+        <div id="ceoEditError" class="form-msg error"></div>
+      </div>
+      <div class="admin-actions">
+        <button onclick="updateCeoProfile()" class="btn-primary" style="background: linear-gradient(135deg, var(--gold), var(--orange));">Update CEO Profile</button>
+        <button onclick="closeCeoEditModal()" class="btn-secondary">Cancel</button>
       </div>
     </div>
   </div>
