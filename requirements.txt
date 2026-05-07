@@ -5,3 +5,9 @@ psycopg2-binary
 flask-sqlalchemy
 python-dotenv
 boto3  # For AWS S3 file storage
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.5.0
+google-api-python-client>=2.0.0
+google-auth-httplib2>=0.1.0
+google-auth-oauthlib>=0.5.0

@@ -133,26 +133,70 @@ def encode_file_to_base64(file):
     return None
 
 def save_to_google_drive(data):
-    """Save data to Google Drive using API"""
+    """Save data to Google Drive using OAuth2 API"""
     try:
-        # Try Google Drive API first
-        google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
+        # Try Google Drive OAuth2 API first
+        from googleapiclient.discovery import build
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
+        from googleapiclient.http import MediaIoBaseUpload
+        from googleapiclient.errors import HttpError
         
-        if google_drive_url:
-            # Send data to Google Drive via webhook
-            import requests
-            response = requests.post(google_drive_url, 
-                json={'data': data, 'timestamp': datetime.now().isoformat()},
-                headers={'Content-Type': 'application/json'},
-                timeout=30
+        # Check if Google Drive credentials are available
+        credentials_json = os.environ.get('GOOGLE_DRIVE_CREDENTIALS')
+        if credentials_json:
+            import json
+            credentials_info = json.loads(credentials_json)
+            
+            SCOPES = ['https://www.googleapis.com/auth/drive.file']
+            creds = None
+            
+            # Try to load existing credentials
+            token_file = 'token.json'
+            if os.path.exists(token_file):
+                from google.oauth2.credentials import Credentials
+                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+            
+            # If no valid credentials, get new ones
+            if not creds or not creds.valid:
+                flow = InstalledAppFlow.from_client_config(
+                    client_config=credentials_info,
+                    scopes=SCOPES,
+                    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+                )
+                creds = flow.run_local_server(port=0)
+                
+                # Save credentials for future use
+                with open(token_file, 'w') as token:
+                    token.write(creds.to_json())
+            
+            # Build Google Drive service
+            service = build('drive', 'v3', credentials=creds)
+            
+            # Create backup data
+            backup_filename = f"mtr_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            
+            # Upload to Google Drive
+            file_metadata = {
+                'name': backup_filename,
+                'parents': [os.environ.get('GOOGLE_DRIVE_FOLDER_ID', 'root')]
+            }
+            
+            media = MediaIoBaseUpload(
+                'application/json',
+                json.dumps(data, indent=2),
+                resumable=True
             )
             
-            if response.status_code == 200:
-                print(f"Data synced to Google Drive: {len(data)} riders")
-                return True
-            else:
-                print(f"Google Drive sync failed: {response.status_code}")
-                return False
+            file = service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            )
+            
+            print(f"Successfully uploaded {backup_filename} to Google Drive")
+            return True
         else:
             # Fallback to local JSON file
             backup_file = 'mtr_backup.json'
@@ -160,39 +204,81 @@ def save_to_google_drive(data):
                 json.dump(data, f, indent=2)
             print(f"Data backed up to local file: {backup_file}")
             return True
+            
     except Exception as e:
-        print(f"Cloud backup failed: {e}")
+        print(f"Google Drive backup failed: {e}")
         return False
 
 def load_from_google_drive():
     """Load data from Google Drive or backup file"""
     try:
-        # Try Google Drive API first
-        google_drive_url = os.environ.get('GOOGLE_DRIVE_DATA_URL')
+        # Try Google Drive OAuth2 API first
+        from googleapiclient.discovery import build
+        from google.oauth2.credentials import Credentials
+        from google_auth_oauthlib.flow import InstalledAppFlow
+        from google.auth.transport.requests import Request
         
-        if google_drive_url:
-            # Get data from Google Drive
-            import requests
-            response = requests.get(google_drive_url, timeout=30)
+        # Check if Google Drive credentials are available
+        credentials_json = os.environ.get('GOOGLE_DRIVE_CREDENTIALS')
+        if credentials_json:
+            import json
+            credentials_info = json.loads(credentials_json)
             
-            if response.status_code == 200:
-                data = response.json()
+            SCOPES = ['https://www.googleapis.com/auth/drive.file']
+            creds = None
+            
+            # Try to load existing credentials
+            token_file = 'token.json'
+            if os.path.exists(token_file):
+                from google.oauth2.credentials import Credentials
+                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
+            
+            # If no valid credentials, get new ones
+            if not creds or not creds.valid:
+                flow = InstalledAppFlow.from_client_config(
+                    client_config=credentials_info,
+                    scopes=SCOPES,
+                    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
+                )
+                creds = flow.run_local_server(port=0)
+                
+                # Save credentials for future use
+                with open(token_file, 'w') as token:
+                    token.write(creds.to_json())
+            
+            # Build Google Drive service
+            service = build('drive', 'v3', credentials=creds)
+            
+            # Get latest backup file from Google Drive
+            results = service.files().list(
+                q="name contains 'mtr_backup_' and mimeType='application/json'",
+                orderBy='createdTime desc',
+                pageSize=1
+            )
+            
+            if results.get('files'):
+                latest_file = results['files'][0]
+                file_id = latest_file['id']
+                
+                # Download the latest backup
+                request = service.files().get_media(fileId=file_id)
+                file_content = request.execute()
+                
+                import json
+                data = json.loads(file_content.decode('utf-8'))
                 print(f"Loaded {len(data)} riders from Google Drive")
                 return data
-            else:
-                print(f"Google Drive load failed: {response.status_code}")
-                return None
-        else:
-            # Fallback to local JSON file
-            backup_file = 'mtr_backup.json'
-            if os.path.exists(backup_file):
-                with open(backup_file, 'r') as f:
-                    data = json.load(f)
-                print(f"Loaded {len(data)} riders from local backup")
-                return data
-            return None
+            
+        # Fallback to local JSON file
+        backup_file = 'mtr_backup.json'
+        if os.path.exists(backup_file):
+            with open(backup_file, 'r') as f:
+                data = json.load(f)
+            print(f"Loaded {len(data)} riders from local backup")
+            return data
+        return None
     except Exception as e:
-        print(f"Cloud load failed: {e}")
+        print(f"Google Drive load failed: {e}")
         return None
 
 def auto_sync_to_cloud():
@@ -1227,7 +1313,7 @@ def cloud_status():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
-# Initialize database with external storage for permanent persistence
+# Initialize database with Google Drive OAuth2 and auto-restore
 with app.app_context():
     # Create tables only if they don't exist
     db.create_all()
@@ -1236,13 +1322,13 @@ with app.app_context():
     rider_count = Registration.query.count()
     print(f"Current rider count: {rider_count}")
     
-    # Try to restore from external storage if database is empty
+    # Try to restore from Google Drive if database is empty
     if rider_count == 0:
         try:
-            # First try to load from external storage (JSON file)
+            # First try to load from Google Drive
             backup_data = load_from_google_drive()
             if backup_data:
-                print("Found external backup data, restoring...")
+                print("Found Google Drive backup, restoring...")
                 for rider_data in backup_data:
                     rider = Registration(
                         firstName=rider_data.get('firstName', ''),
@@ -1263,9 +1349,9 @@ with app.app_context():
                     )
                     db.session.add(rider)
                 db.session.commit()
-                print(f"Restored {len(backup_data)} riders from external storage")
+                print(f"Restored {len(backup_data)} riders from Google Drive")
             else:
-                print("No external backup found, adding CEO rider...")
+                print("No Google Drive backup found, adding CEO rider...")
                 ceo = Registration(
                     firstName='Rahul',
                     lastName='Choudhari',
@@ -1287,10 +1373,10 @@ with app.app_context():
             print(f"Database initialization failed: {e}")
     else:
         print(f"Database already has {rider_count} riders, preserving existing data")
-        # Sync current data to external storage for safety
+        # Sync current data to Google Drive for safety
         try:
-            sync_to_external_storage()
-            print("Synced existing data to external storage")
+            auto_sync_to_cloud()
+            print("Synced existing data to Google Drive")
         except Exception as e:
             print(f"Initial sync failed: {e}")
 
