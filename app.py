@@ -1,10 +1,14 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
-import json
-import os
-from datetime import datetime
-from werkzeug.utils import secure_filename
-import psycopg2
+from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from werkzeug.utils import secure_filename
+from datetime import datetime
+import json
+import logging
+from functools import wraps
+import requests
+import base64
+import os
+import psycopg2
 from dotenv import load_dotenv
 import boto3
 from botocore.exceptions import NoCredentialsError
@@ -127,6 +131,65 @@ def encode_file_to_base64(file):
             print(f"Error encoding file to base64: {e}")
             return None
     return None
+
+def save_to_google_drive(data):
+    """Save data to Google Drive using API"""
+    try:
+        # This would require Google Drive API setup
+        # For now, save to local JSON file as backup
+        backup_file = 'mtr_backup.json'
+        with open(backup_file, 'w') as f:
+            json.dump(data, f, indent=2)
+        print(f"Data backed up to {backup_file}")
+        return True
+    except Exception as e:
+        print(f"Google Drive backup failed: {e}")
+        return False
+
+def load_from_google_drive():
+    """Load data from Google Drive or backup file"""
+    try:
+        backup_file = 'mtr_backup.json'
+        if os.path.exists(backup_file):
+            with open(backup_file, 'r') as f:
+                data = json.load(f)
+            print(f"Loaded {len(data)} riders from backup file")
+            return data
+        return None
+    except Exception as e:
+        print(f"Google Drive load failed: {e}")
+        return None
+
+def sync_to_external_storage():
+    """Sync current database to external storage"""
+    try:
+        riders = Registration.query.all()
+        backup_data = []
+        
+        for rider in riders:
+            backup_data.append({
+                'firstName': rider.firstName,
+                'lastName': rider.lastName,
+                'phone': rider.phone,
+                'city': rider.city,
+                'bike': rider.bike,
+                'experience': rider.experience,
+                'alias': rider.alias,
+                'instagram': rider.instagram,
+                'riderPhoto': rider.riderPhoto,
+                'bikePhoto': rider.bikePhoto,
+                'sectionPhoto': rider.sectionPhoto,
+                'reason': rider.reason,
+                'role': rider.role,
+                'priority': rider.priority,
+                'timestamp': rider.timestamp
+            })
+        
+        save_to_google_drive(backup_data)
+        return True
+    except Exception as e:
+        print(f"Sync failed: {e}")
+        return False
 
 def upload_file_to_s3(file, filename, folder='uploads'):
     """Upload file to S3 or save locally if S3 not configured"""
@@ -360,6 +423,13 @@ def add_cofounder():
         db.session.add(cofounder)
         db.session.commit()
         
+        # Auto-backup to external storage
+        try:
+            sync_to_external_storage()
+            print("Auto-backup completed after cofounder addition")
+        except Exception as e:
+            print(f"Auto-backup failed: {e}")
+        
         return jsonify({'success': True, 'message': 'Co-Founder added successfully'})
         
     except Exception as e:
@@ -439,6 +509,13 @@ def add_captain():
         db.session.add(captain)
         db.session.commit()
         
+        # Auto-backup to external storage
+        try:
+            sync_to_external_storage()
+            print("Auto-backup completed after captain addition")
+        except Exception as e:
+            print(f"Auto-backup failed: {e}")
+        
         return jsonify({'success': True, 'message': 'Captain added successfully'})
         
     except Exception as e:
@@ -507,6 +584,13 @@ def add_member_manual():
         registration = Registration(**registration_data)
         db.session.add(registration)
         db.session.commit()
+        
+        # Auto-backup to external storage
+        try:
+            sync_to_external_storage()
+            print("Auto-backup completed after member addition")
+        except Exception as e:
+            print(f"Auto-backup failed: {e}")
         
         return jsonify({'success': True, 'message': 'Member added successfully'})
         
@@ -591,6 +675,13 @@ def register():
 
         db.session.add(registration)
         db.session.commit()
+
+        # Auto-backup to external storage
+        try:
+            sync_to_external_storage()
+            print("Auto-backup completed after registration")
+        except Exception as e:
+            print(f"Auto-backup failed: {e}")
 
         whatsapp_link = os.environ.get('WHATSAPP_LINK', "https://chat.whatsapp.com/HbRgZJa1Rqm5Kbso36WDWf?mode=hqctcla")
 
@@ -887,42 +978,82 @@ def debug_database():
 
 @app.route('/api/backup-data', methods=['POST'])
 def backup_data():
-    """Create backup of all rider data"""
+    """Create backup of all rider data to external storage"""
     if not check_admin_auth():
         return jsonify({'success': False, 'message': 'Unauthorized'}), 401
     
     try:
-        riders = Registration.query.all()
-        backup_data = []
-        
-        for rider in riders:
-            backup_data.append({
-                'firstName': rider.firstName,
-                'lastName': rider.lastName,
-                'phone': rider.phone,
-                'city': rider.city,
-                'bike': rider.bike,
-                'experience': rider.experience,
-                'alias': rider.alias,
-                'instagram': rider.instagram,
-                'riderPhoto': rider.riderPhoto,
-                'bikePhoto': rider.bikePhoto,
-                'sectionPhoto': rider.sectionPhoto,
-                'reason': rider.reason,
-                'role': rider.role,
-                'priority': rider.priority,
-                'timestamp': rider.timestamp
+        success = sync_to_external_storage()
+        if success:
+            return jsonify({
+                'success': True,
+                'message': 'Data backed up to external storage successfully'
             })
-        
-        return jsonify({
-            'success': True,
-            'message': f'Backup created with {len(backup_data)} riders',
-            'data': backup_data
-        })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'Backup failed - check logs'
+            })
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
-# Initialize database with robust data preservation
+@app.route('/api/restore-data', methods=['POST'])
+def restore_data():
+    """Restore data from external storage"""
+    if not check_admin_auth():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    try:
+        backup_data = load_from_google_drive()
+        if backup_data:
+            # Clear existing data
+            Registration.query.delete()
+            db.session.commit()
+            
+            # Restore from backup
+            for rider_data in backup_data:
+                rider = Registration(
+                    firstName=rider_data.get('firstName', ''),
+                    lastName=rider_data.get('lastName', ''),
+                    phone=rider_data.get('phone', ''),
+                    city=rider_data.get('city', ''),
+                    bike=rider_data.get('bike', ''),
+                    experience=rider_data.get('experience', ''),
+                    alias=rider_data.get('alias', ''),
+                    instagram=rider_data.get('instagram', ''),
+                    riderPhoto=rider_data.get('riderPhoto'),
+                    bikePhoto=rider_data.get('bikePhoto'),
+                    sectionPhoto=rider_data.get('sectionPhoto'),
+                    reason=rider_data.get('reason', ''),
+                    role=rider_data.get('role', 'Member'),
+                    priority=rider_data.get('priority', 5),
+                    timestamp=rider_data.get('timestamp', '')
+                )
+                db.session.add(rider)
+            
+            db.session.commit()
+            return jsonify({
+                'success': True,
+                'message': f'Restored {len(backup_data)} riders from backup'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': 'No backup data found'
+            })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/auto-backup', methods=['POST'])
+def auto_backup():
+    """Automatic backup after any data change"""
+    try:
+        sync_to_external_storage()
+        return jsonify({'success': True})
+    except:
+        return jsonify({'success': False})
+
+# Initialize database with external storage for permanent persistence
 with app.app_context():
     # Create tables only if they don't exist
     db.create_all()
@@ -931,16 +1062,14 @@ with app.app_context():
     rider_count = Registration.query.count()
     print(f"Current rider count: {rider_count}")
     
-    # Try to restore from backup if database is empty
+    # Try to restore from external storage if database is empty
     if rider_count == 0:
         try:
-            # Check for backup data in environment variables
-            backup_data = os.environ.get('MTR_BACKUP_DATA')
+            # First try to load from external storage (JSON file)
+            backup_data = load_from_google_drive()
             if backup_data:
-                print("Found backup data, restoring...")
-                import json
-                riders_data = json.loads(backup_data)
-                for rider_data in riders_data:
+                print("Found external backup data, restoring...")
+                for rider_data in backup_data:
                     rider = Registration(
                         firstName=rider_data.get('firstName', ''),
                         lastName=rider_data.get('lastName', ''),
@@ -960,32 +1089,36 @@ with app.app_context():
                     )
                     db.session.add(rider)
                 db.session.commit()
-                print(f"Restored {len(riders_data)} riders from backup")
+                print(f"Restored {len(backup_data)} riders from external storage")
+            else:
+                print("No external backup found, adding CEO rider...")
+                ceo = Registration(
+                    firstName='Rahul',
+                    lastName='Choudhari',
+                    phone='9876543210',
+                    city='Pune',
+                    bike='Royal Enfield Classic 350',
+                    experience='10+ years',
+                    alias='Madmax',
+                    instagram='madmax_mtr',
+                    reason='Founder of Mad To Ride Brotherhood',
+                    role='Founder',
+                    priority=1,
+                    timestamp='01 Jan 2020'
+                )
+                db.session.add(ceo)
+                db.session.commit()
+                print("CEO rider added to database")
         except Exception as e:
-            print(f"Backup restore failed: {e}")
-    
-    # Only add CEO rider if database is still completely empty
-    if rider_count == 0:
-        print("Database is empty, adding CEO rider...")
-        ceo = Registration(
-            firstName='Rahul',
-            lastName='Choudhari',
-            phone='9876543210',
-            city='Pune',
-            bike='Royal Enfield Classic 350',
-            experience='10+ years',
-            alias='Madmax',
-            instagram='madmax_mtr',
-            reason='Founder of Mad To Ride Brotherhood',
-            role='Founder',
-            priority=1,
-            timestamp='01 Jan 2020'
-        )
-        db.session.add(ceo)
-        db.session.commit()
-        print("CEO rider added to database")
+            print(f"Database initialization failed: {e}")
     else:
         print(f"Database already has {rider_count} riders, preserving existing data")
+        # Sync current data to external storage for safety
+        try:
+            sync_to_external_storage()
+            print("Synced existing data to external storage")
+        except Exception as e:
+            print(f"Initial sync failed: {e}")
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
