@@ -885,7 +885,44 @@ def debug_database():
             'app_environment': os.environ.get('FLASK_ENV', 'development')
         }), 500
 
-# Initialize database with data preservation
+@app.route('/api/backup-data', methods=['POST'])
+def backup_data():
+    """Create backup of all rider data"""
+    if not check_admin_auth():
+        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
+    
+    try:
+        riders = Registration.query.all()
+        backup_data = []
+        
+        for rider in riders:
+            backup_data.append({
+                'firstName': rider.firstName,
+                'lastName': rider.lastName,
+                'phone': rider.phone,
+                'city': rider.city,
+                'bike': rider.bike,
+                'experience': rider.experience,
+                'alias': rider.alias,
+                'instagram': rider.instagram,
+                'riderPhoto': rider.riderPhoto,
+                'bikePhoto': rider.bikePhoto,
+                'sectionPhoto': rider.sectionPhoto,
+                'reason': rider.reason,
+                'role': rider.role,
+                'priority': rider.priority,
+                'timestamp': rider.timestamp
+            })
+        
+        return jsonify({
+            'success': True,
+            'message': f'Backup created with {len(backup_data)} riders',
+            'data': backup_data
+        })
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# Initialize database with robust data preservation
 with app.app_context():
     # Create tables only if they don't exist
     db.create_all()
@@ -894,7 +931,41 @@ with app.app_context():
     rider_count = Registration.query.count()
     print(f"Current rider count: {rider_count}")
     
-    # Only add CEO rider if database is completely empty
+    # Try to restore from backup if database is empty
+    if rider_count == 0:
+        try:
+            # Check for backup data in environment variables
+            backup_data = os.environ.get('MTR_BACKUP_DATA')
+            if backup_data:
+                print("Found backup data, restoring...")
+                import json
+                riders_data = json.loads(backup_data)
+                for rider_data in riders_data:
+                    rider = Registration(
+                        firstName=rider_data.get('firstName', ''),
+                        lastName=rider_data.get('lastName', ''),
+                        phone=rider_data.get('phone', ''),
+                        city=rider_data.get('city', ''),
+                        bike=rider_data.get('bike', ''),
+                        experience=rider_data.get('experience', ''),
+                        alias=rider_data.get('alias', ''),
+                        instagram=rider_data.get('instagram', ''),
+                        riderPhoto=rider_data.get('riderPhoto'),
+                        bikePhoto=rider_data.get('bikePhoto'),
+                        sectionPhoto=rider_data.get('sectionPhoto'),
+                        reason=rider_data.get('reason', ''),
+                        role=rider_data.get('role', 'Member'),
+                        priority=rider_data.get('priority', 5),
+                        timestamp=rider_data.get('timestamp', '')
+                    )
+                    db.session.add(rider)
+                db.session.commit()
+                print(f"Restored {len(riders_data)} riders from backup")
+                return
+        except Exception as e:
+            print(f"Backup restore failed: {e}")
+    
+    # Only add CEO rider if database is still completely empty
     if rider_count == 0:
         print("Database is empty, adding CEO rider...")
         ceo = Registration(
