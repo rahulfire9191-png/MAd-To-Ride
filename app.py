@@ -656,7 +656,29 @@ def add_cofounder():
         
         db.session.add(cofounder)
         db.session.commit()
-        
+
+        # ── Sync to Supabase ─────────────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').insert({
+                    'firstName': cofounder.firstName,
+                    'lastName': cofounder.lastName,
+                    'phone': cofounder.phone,
+                    'city': cofounder.city,
+                    'bike': cofounder.bike,
+                    'experience': cofounder.experience,
+                    'alias': cofounder.alias,
+                    'instagram': cofounder.instagram,
+                    'riderPhoto': cofounder.riderPhoto,
+                    'bikePhoto': cofounder.bikePhoto,
+                    'reason': cofounder.reason,
+                    'role': cofounder.role,
+                    'priority': cofounder.priority,
+                    'timestamp': cofounder.timestamp
+                }).execute()
+            except Exception as e:
+                print(f"Supabase sync failed: {e}")
+
         # Auto-backup to external storage
         try:
             sync_to_external_storage()
@@ -742,7 +764,30 @@ def add_captain():
         
         db.session.add(captain)
         db.session.commit()
-        
+
+        # ── Sync to Supabase ─────────────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').insert({
+                    'firstName': captain.firstName,
+                    'lastName': captain.lastName,
+                    'phone': captain.phone,
+                    'city': captain.city,
+                    'bike': captain.bike,
+                    'experience': captain.experience,
+                    'alias': captain.alias,
+                    'instagram': captain.instagram,
+                    'riderPhoto': captain.riderPhoto,
+                    'bikePhoto': captain.bikePhoto,
+                    'reason': captain.reason,
+                    'role': captain.role,
+                    'priority': captain.priority,
+                    'captainNumber': captain.captainNumber,
+                    'timestamp': captain.timestamp
+                }).execute()
+            except Exception as e:
+                print(f"Supabase sync failed: {e}")
+
         # Auto-backup to external storage
         try:
             sync_to_external_storage()
