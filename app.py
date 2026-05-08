@@ -325,20 +325,6 @@ def auto_sync_to_cloud():
         print(f"Auto-sync failed: {e}")
         return False
 
-def load_from_google_drive():
-    """Load data from Google Drive or backup file"""
-    try:
-        backup_file = 'mtr_backup.json'
-        if os.path.exists(backup_file):
-            with open(backup_file, 'r') as f:
-                data = json.load(f)
-            print(f"Loaded {len(data)} riders from backup file")
-            return data
-        return None
-    except Exception as e:
-        print(f"Google Drive load failed: {e}")
-        return None
-
 def sync_to_external_storage():
     """Sync current database to external storage"""
     try:
