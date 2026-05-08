@@ -1689,9 +1689,13 @@ async function doSecChangePasswordImpl(oldId, newId, confirmId, errId) {
   }
 
   try {
-    const res = await fetch('/api/change-password', {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_credentials`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
       body: JSON.stringify({ oldPassword: oldP, newPassword: newP })
     });
     const data = await res.json();
@@ -1716,89 +1720,6 @@ async function doSecChangePasswordImpl(oldId, newId, confirmId, errId) {
   }
 }
 
-/* ================================================
-   BACKUP & CLOUD
-   ================================================ */
-async function loadBackupStatus() {
-  try {
-    const res = await fetch('/api/backup-status');
-    const data = await res.json();
-    document.getElementById('bsLastBackup').textContent = data.lastBackup || 'Never';
-    document.getElementById('bsCloudSync').textContent = data.cloud_sync === 'configured' ? 'Active' : 'Inactive';
-    document.getElementById('bsCloudSync').className = 'bs-value ' + (data.cloud_sync === 'configured' ? 'ok' : 'warn');
-    document.getElementById('bsTotalRiders').textContent = data.totalRiders || ridersCache.length || '–';
-  } catch {
-    document.getElementById('bsLastBackup').textContent = 'Unavailable';
-    document.getElementById('bsCloudSync').textContent = 'Unavailable';
-  }
-}
-
-async function doDownloadBackup() {
-  showToast('Preparing download...', 'info');
-  try {
-    const res = await fetch('/api/download-backup');
-    if (res.ok) {
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a'); a.href = url; a.download = 'mtr_backup.json';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      showToast('Backup downloaded!', 'success');
-    } else { showToast('Download failed.', 'error'); }
-  } catch { showToast('Error downloading backup.', 'error'); }
-}
-
-async function doCreateBackup() {
-  showToast('Creating backup...', 'info');
-  try {
-    const res = await fetch('/api/admin/create-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-    const data = await res.json();
-    if (data.success) { showToast('Backup created!', 'success'); loadBackupStatus(); }
-    else { showToast('Failed: ' + (data.message||'Error'), 'error'); }
-  } catch { showToast('Error creating backup.', 'error'); }
-}
-
-async function doRestoreBackup() {
-  if (!confirm('Restore from backup? This will replace current data.')) return;
-  showToast('Restoring backup...', 'info');
-  try {
-    const res = await fetch('/api/admin/restore-backup', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-    const data = await res.json();
-    if (data.success) { showToast('Backup restored! Reloading...', 'success'); setTimeout(() => location.reload(), 2000); }
-    else { showToast('Failed: ' + (data.message||'Error'), 'error'); }
-  } catch { showToast('Error restoring backup.', 'error'); }
-}
-
-async function doCheckCloudStatus() {
-  showToast('Checking cloud...', 'info');
-  try {
-    const res = await fetch('/api/cloud-status');
-    const data = await res.json();
-    const msg = `Cloud: ${data.google_drive ? 'Connected' : 'Not connected'} | Last sync: ${data.last_sync||'Never'}`;
-    showToast(msg, data.google_drive ? 'success' : 'info');
-    loadBackupStatus();
-  } catch { showToast('Could not check cloud status.', 'error'); }
-}
-
-async function doSyncToCloud() {
-  showToast('Syncing to cloud...', 'info');
-  try {
-    const res = await fetch('/api/admin/sync-to-cloud', { method: 'POST', headers: { 'Content-Type': 'application/json' } });
-    const data = await res.json();
-    if (data.success) { showToast('Synced to cloud!', 'success'); loadBackupStatus(); }
-    else { showToast('Sync failed: ' + (data.message||'Error'), 'error'); }
-  } catch { showToast('Error syncing.', 'error'); }
-}
-
-async function doCheckBackupStatus() {
-  showToast('Checking backup status...', 'info');
-  try {
-    const res = await fetch('/api/backup-status');
-    const data = await res.json();
-    const msg = `Riders: ${data.totalRiders||0} | Photos: ${data.totalPhotos||0} | Last: ${data.lastBackup||'Never'}`;
-    showToast(msg, 'info');
-  } catch { showToast('Could not check backup status.', 'error'); }
-}
 
 /* ================================================
    PUBLIC FORM — REGISTER
