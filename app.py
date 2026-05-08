@@ -12,13 +12,19 @@ import psycopg2
 from dotenv import load_dotenv
 import boto3
 from botocore.exceptions import NoCredentialsError
+from supabase import create_client, Client
 
 # Load environment variables
 load_dotenv()
 
 app = Flask(__name__, template_folder='templates', static_folder='.')
 
-# Database configuration
+# ── Supabase client ──────────────────────────────────────────────────────────
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
+
+# ── SQLAlchemy fallback (SQLite for local dev if Supabase not configured) ────
 DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///registrations.db')
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
