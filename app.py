@@ -468,6 +468,14 @@ def health_check():
 
 @app.route('/api/riders', methods=['GET'])
 def get_riders():
+    # Try Supabase first
+    if supabase:
+        try:
+            res = supabase.table('riders').select('*').order('priority').execute()
+            return jsonify(res.data)
+        except Exception as e:
+            print(f"Supabase read failed, falling back to SQLAlchemy: {e}")
+    # SQLAlchemy fallback
     riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).all()
     return jsonify([rider.to_dict() for rider in riders])
 
