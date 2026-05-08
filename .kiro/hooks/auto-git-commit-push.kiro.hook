@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "name": "Auto Git Commit & Push",
+  "description": "Automatically stages all changes, commits with a timestamped message, and pushes to origin/main whenever a file is saved in the workspace.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*"
+    ]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cd \"/Users/madmax/Downloads/MTR Project 3.0\" && git add -A && git diff --cached --quiet || git commit -m \"auto: update $(date '+%Y-%m-%d %H:%M:%S')\" && git push origin main",
+    "timeout": 30
+  }
+}
