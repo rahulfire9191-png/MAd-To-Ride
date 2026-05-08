@@ -944,21 +944,6 @@ let ridersCache = [];
 const SUPABASE_URL = 'https://yhzxqzokmztxqfbdqvt.supabase.co';
 const SUPABASE_KEY = 'yhIZ02_2DDEEUnWg_1T0NQ_e0fT-OdC';
 
-// Test Supabase connection
-async function testSupabaseConnection() {
-  try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    return response.ok;
-  } catch (error) {
-    console.error('Supabase connection test failed:', error);
-    return false;
-  }
-}
 
 /* ================================================
    TOAST NOTIFICATIONS
@@ -1094,13 +1079,6 @@ function getGradient(seed) {
 
 async function loadRegisteredRiders() {
   try {
-    // Test connection first
-    const isConnected = await testSupabaseConnection();
-    if (!isConnected) {
-      showToast('Database connection failed. Check configuration.', 'error');
-      return;
-    }
-
     const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
       headers: {
         'apikey': SUPABASE_KEY,
@@ -1109,7 +1087,8 @@ async function loadRegisteredRiders() {
     });
     
     if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      console.warn('Database response:', response.status, response.statusText);
+      return;
     }
     
     const riders = await response.json();
@@ -1123,7 +1102,7 @@ async function loadRegisteredRiders() {
     }
   } catch (e) {
     console.error('Error loading riders from Supabase:', e);
-    showToast('Failed to load riders. Check network and database.', 'error');
+    // Don't show error popup on page load
   }
 }
 
@@ -1326,14 +1305,6 @@ async function addRiderFromAdmin() {
   };
 
   try {
-    // Test connection first
-    const isConnected = await testSupabaseConnection();
-    if (!isConnected) {
-      errEl.textContent = '❌ Database connection failed. Check configuration.';
-      errEl.classList.add('show');
-      return;
-    }
-
     const res = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
       method: 'POST',
       headers: {
@@ -1351,7 +1322,7 @@ async function addRiderFromAdmin() {
       refreshRidersTable();
       loadRegisteredRiders();
     } else {
-      errEl.textContent = `❌ Error adding rider (${res.status}). Please try again.`;
+      errEl.textContent = `❌ Error adding rider. Please try again.`;
       errEl.classList.add('show');
     }
   } catch {
