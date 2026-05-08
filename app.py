@@ -396,11 +396,20 @@ def validate_mobile_number(phone):
     return None
 
 def check_duplicate_mobile(phone):
-    """Check if mobile number already exists in registrations"""
+    """Check if mobile number already exists — checks Supabase first, then SQLite"""
     validated_phone = validate_mobile_number(phone)
-    if validated_phone:
-        return Registration.query.filter_by(phone=validated_phone).first() is not None
-    return False
+    if not validated_phone:
+        return False
+    # Check Supabase first
+    if supabase:
+        try:
+            res = supabase.table('riders').select('phone').eq('phone', validated_phone).execute()
+            if res.data:
+                return True
+        except Exception as e:
+            print(f"Supabase duplicate check failed, falling back to SQLite: {e}")
+    # SQLAlchemy fallback
+    return Registration.query.filter_by(phone=validated_phone).first() is not None
 
 def get_next_captain_number():
     """Get the next available captain number"""
