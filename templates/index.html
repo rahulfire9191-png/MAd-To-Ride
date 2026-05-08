@@ -1279,28 +1279,42 @@ async function addRiderFromAdmin() {
     errEl.classList.add('show'); return;
   }
 
-  const endpoint = role === 'Co-Founder' ? '/api/add-cofounder' : role === 'Captain' ? '/api/add-captain' : '/api/add-member-manual';
-
-  const fd = new FormData();
-  fd.append('firstName', fn); fd.append('lastName', ln); fd.append('phone', vPhone);
-  fd.append('city', city); fd.append('bike', bike); fd.append('role', role);
-  fd.append('alias', alias); fd.append('experience', experience);
-  fd.append('instagram', instagram); fd.append('reason', message);
-  if (captainNum && role === 'Captain') fd.append('captainNumber', captainNum);
-  if (riderPhoto) fd.append('riderPhoto', riderPhoto);
-  if (bikePhoto) fd.append('bikePhoto', bikePhoto);
+  // Create rider object for Supabase
+  const riderData = {
+    firstName: fn,
+    lastName: ln,
+    phone: vPhone,
+    city,
+    bike,
+    role,
+    alias,
+    experience,
+    instagram,
+    reason: message,
+    priority: role === 'Co-Founder' ? 2 : role === 'Captain' ? 3 : 5,
+    captainNumber: captainNum && role === 'Captain' ? captainNum : null,
+    timestamp: new Date().toISOString()
+  };
 
   try {
-    const res = await fetch(endpoint, { method: 'POST', body: fd });
-    const data = await res.json();
-    if (data.success) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(riderData)
+    });
+    
+    if (res.ok) {
       showToast(`${fn} ${ln} added as ${role}!`, 'success');
       clearArfForm();
       refreshDashboard();
       refreshRidersTable();
       loadRegisteredRiders();
     } else {
-      errEl.textContent = '❌ ' + (data.message || 'Error adding rider.');
+      errEl.textContent = '❌ Error adding rider. Please try again.';
       errEl.classList.add('show');
     }
   } catch {
@@ -1813,20 +1827,43 @@ async function handleSubmit() {
     if (bikePhoto) formData.append('bikePhoto', bikePhoto);
     formData.append('message', message);
 
-    const res = await fetch('/register', { method: 'POST', body: formData });
-    const data = await res.json();
+    // Create rider object for Supabase
+    const riderData = {
+      firstName,
+      lastName,
+      phone: vPhone,
+      city,
+      bike,
+      experience,
+      alias,
+      instagram,
+      message,
+      role: 'Member',
+      priority: 5,
+      timestamp: new Date().toISOString()
+    };
 
-    if (data.success) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
+      method: 'POST',
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json',
+        'Prefer': 'return=minimal'
+      },
+      body: JSON.stringify(riderData)
+    });
+
+    if (res.ok) {
       document.getElementById('riderNameDisplay').textContent = firstName + ' ' + lastName;
       document.getElementById('successModal').classList.add('active');
       const waLink = document.getElementById('waLink');
-      if (data.whatsapp_link) {
-        waLink.onclick = e => { e.preventDefault(); window.open(data.whatsapp_link, '_blank'); };
-        setTimeout(() => window.open(data.whatsapp_link, '_blank'), 1500);
+      if (waLink) {
+        waLink.onclick = e => { e.preventDefault(); window.open('https://chat.whatsapp.com/', '_blank'); };
+        setTimeout(() => window.open('https://chat.whatsapp.com/', '_blank'), 1500);
       }
       loadRegisteredRiders();
     } else {
-      msgEl.textContent = '❌ ' + (data.message || 'Submission failed.');
+      msgEl.textContent = '❌ Registration failed. Please try again.';
       msgEl.classList.add('show');
     }
   } catch {
