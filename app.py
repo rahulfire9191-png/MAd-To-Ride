@@ -863,7 +863,29 @@ def add_member_manual():
         registration = Registration(**registration_data)
         db.session.add(registration)
         db.session.commit()
-        
+
+        # ── Sync to Supabase ─────────────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').insert({
+                    'firstName': registration_data['firstName'],
+                    'lastName': registration_data['lastName'],
+                    'phone': registration_data['phone'],
+                    'city': registration_data['city'],
+                    'bike': registration_data['bike'],
+                    'experience': registration_data['experience'],
+                    'alias': registration_data['alias'],
+                    'instagram': registration_data['instagram'],
+                    'riderPhoto': registration_data['riderPhoto'],
+                    'bikePhoto': registration_data['bikePhoto'],
+                    'reason': registration_data['reason'],
+                    'role': registration_data['role'],
+                    'priority': registration_data['priority'],
+                    'timestamp': registration_data['timestamp']
+                }).execute()
+            except Exception as e:
+                print(f"Supabase sync failed: {e}")
+
         # Auto-backup to external storage
         try:
             sync_to_external_storage()
