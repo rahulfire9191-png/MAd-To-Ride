@@ -1209,6 +1209,18 @@ def update_rider_role():
             rider_to_update.captainNumber = None
         
         db.session.commit()
+
+        # ── Sync role update to Supabase ─────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').update({
+                    'role': rider_to_update.role,
+                    'priority': rider_to_update.priority,
+                    'captainNumber': rider_to_update.captainNumber,
+                    'reason': rider_to_update.reason,
+                }).eq('phone', phone).execute()
+            except Exception as e:
+                print(f"Supabase role sync failed: {e}")
         
         return jsonify({'success': True, 'message': 'Rider role updated successfully'})
         
