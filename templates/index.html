@@ -768,7 +768,6 @@ input[type="file"].form-input{padding:8px 16px;cursor:pointer}
       </div>
       <div class="admin-nav-section">
         <span class="admin-nav-label">System</span>
-        <button class="admin-nav-item" onclick="switchTab('backup')"><span class="nav-icon">💾</span> Backup & Sync</button>
         <button class="admin-nav-item" onclick="switchTab('security')"><span class="nav-icon">🔐</span> Security</button>
       </div>
     </div>
@@ -909,27 +908,7 @@ input[type="file"].form-input{padding:8px 16px;cursor:pointer}
         </div>
       </div>
 
-      <!-- BACKUP TAB -->
-      <div class="admin-section-panel" id="tab-backup">
-        <div class="admin-section-header">
-          <h2>Backup & Sync</h2>
-          <p>Manage data backups and cloud synchronization</p>
-        </div>
-        <div class="backup-status-grid" id="backupStatusGrid">
-          <div class="backup-status-item"><div class="bs-label">Last Backup</div><div class="bs-value warn" id="bsLastBackup">Checking...</div></div>
-          <div class="backup-status-item"><div class="bs-label">Cloud Sync</div><div class="bs-value" id="bsCloudSync">Checking...</div></div>
-          <div class="backup-status-item"><div class="bs-label">Total Riders</div><div class="bs-value ok" id="bsTotalRiders">–</div></div>
-        </div>
-        <div class="admin-cards-grid">
-          <div class="admin-action-card green" onclick="doDownloadBackup()"><div class="card-icon">⬇️</div><div class="card-title">Download Backup</div><div class="card-desc">Export all rider data as a JSON file</div></div>
-          <div class="admin-action-card blue" onclick="doCreateBackup()"><div class="card-icon">🔄</div><div class="card-title">Create Backup</div><div class="card-desc">Save a new backup snapshot on the server</div></div>
-          <div class="admin-action-card orange" onclick="doRestoreBackup()"><div class="card-icon">📂</div><div class="card-title">Restore Backup</div><div class="card-desc">Restore data from the latest backup file</div></div>
-          <div class="admin-action-card purple" onclick="doCheckCloudStatus()"><div class="card-icon">☁️</div><div class="card-title">Cloud Status</div><div class="card-desc">Check Google Drive sync connection status</div></div>
-          <div class="admin-action-card blue" onclick="doSyncToCloud()"><div class="card-icon">🔁</div><div class="card-title">Sync to Cloud</div><div class="card-desc">Push all current data to cloud storage</div></div>
-          <div class="admin-action-card red" onclick="doCheckBackupStatus()"><div class="card-icon">📊</div><div class="card-title">Backup Status</div><div class="card-desc">View detailed backup statistics</div></div>
-        </div>
-      </div>
-
+      
       <!-- SECURITY TAB -->
       <div class="admin-section-panel" id="tab-security">
         <div class="admin-section-header">
@@ -960,6 +939,10 @@ let ceoPwd = 'Admin@Ceo';
 let ceoUnlocked = false;
 let riderToDelete = null;
 let ridersCache = [];
+
+// Supabase Configuration
+const SUPABASE_URL = 'https://sb_publishable_YhIZ02_2DDEEUnWg_1T0NQ_e0fT-OdC.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_YhIZ02_2DDEEUnWg_1T0NQ_e0fT-OdC';
 
 /* ================================================
    TOAST NOTIFICATIONS
@@ -1095,8 +1078,13 @@ function getGradient(seed) {
 
 async function loadRegisteredRiders() {
   try {
-    const res = await fetch('/api/riders');
-    const riders = await res.json();
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+    const riders = await response.json();
     ridersCache = riders;
     renderRidersGrid(riders);
     updateStatNum(riders.length);
@@ -1106,7 +1094,7 @@ async function loadRegisteredRiders() {
       refreshDashboard();
     }
   } catch (e) {
-    console.error('Error loading riders:', e);
+    console.error('Error loading riders from Supabase:', e);
   }
 }
 
@@ -1177,8 +1165,13 @@ function updateStatNum(count) {
    ================================================ */
 async function refreshDashboard() {
   try {
-    const res = await fetch('/api/riders');
-    const riders = await res.json();
+    const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
+      headers: {
+        'apikey': SUPABASE_KEY,
+        'Content-Type': 'application/json'
+      }
+    });
+    const riders = await response.json();
     ridersCache = riders;
     const captains = riders.filter(r => r.role === 'Captain').length;
     const cofounders = riders.filter(r => r.role === 'Co-Founder').length;
