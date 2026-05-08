@@ -1121,6 +1121,26 @@ def update_rider():
             rider_to_update.reason = data.get('reason', rider_to_update.reason).strip()
         
         db.session.commit()
+
+        # ── Sync update to Supabase ──────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').update({
+                    'firstName': rider_to_update.firstName,
+                    'lastName': rider_to_update.lastName,
+                    'alias': rider_to_update.alias,
+                    'city': rider_to_update.city,
+                    'bike': rider_to_update.bike,
+                    'experience': rider_to_update.experience,
+                    'instagram': rider_to_update.instagram,
+                    'reason': rider_to_update.reason,
+                    'role': rider_to_update.role,
+                    'riderPhoto': rider_to_update.riderPhoto,
+                    'bikePhoto': rider_to_update.bikePhoto,
+                    'sectionPhoto': rider_to_update.sectionPhoto,
+                }).eq('phone', original_phone).execute()
+            except Exception as e:
+                print(f"Supabase update sync failed: {e}")
         
         return jsonify({'success': True, 'message': 'Rider information updated successfully'})
         
