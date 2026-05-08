@@ -588,6 +588,13 @@ def delete_rider():
         # Delete the rider
         db.session.delete(rider_to_delete)
         db.session.commit()
+
+        # ── Sync delete to Supabase ──────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').delete().eq('phone', phone).execute()
+            except Exception as e:
+                print(f"Supabase delete sync failed: {e}")
         
         return jsonify({'success': True, 'message': 'Rider deleted successfully'})
         
