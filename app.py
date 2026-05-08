@@ -436,6 +436,15 @@ def serve_sound(filename):
 
 @app.route('/')
 def index():
+    # Try Supabase first
+    if supabase:
+        try:
+            res = supabase.table('riders').select('*').order('priority').limit(12).execute()
+            recent_riders = res.data if res.data else []
+            return render_template('index.html', riders=recent_riders)
+        except Exception as e:
+            print(f"Supabase index load failed, falling back: {e}")
+    # SQLAlchemy fallback
     riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).limit(12).all()
     recent_riders = [rider.to_dict() for rider in riders] if riders else []
     return render_template('index.html', riders=recent_riders)
@@ -444,15 +453,25 @@ def index():
 def health_check():
     """Health check route for deployment debugging"""
     try:
-        # Test database connection
+        supabase_status = 'not configured'
+        supabase_count = 0
+        if supabase:
+            try:
+                res = supabase.table('riders').select('id', count='exact').execute()
+                supabase_count = res.count if hasattr(res, 'count') else len(res.data)
+                supabase_status = 'connected'
+            except Exception as e:
+                supabase_status = f'error: {str(e)}'
+
         rider_count = Registration.query.count()
-        
         return jsonify({
             'status': 'healthy',
             'database': 'connected',
             'rider_count': rider_count,
+            'supabase': supabase_status,
+            'supabase_riders': supabase_count,
             'timestamp': datetime.now().isoformat(),
-            'version': '1.0'
+            'version': '2.0'
         })
     except Exception as e:
         return jsonify({
