@@ -413,22 +413,30 @@ def check_duplicate_mobile(phone):
 
 def get_next_captain_number():
     """Get the next available captain number"""
+    # Try Supabase first
+    if supabase:
+        try:
+            res = supabase.table('riders').select('captainNumber').eq('role', 'Captain').execute()
+            numbers = []
+            for r in res.data:
+                try:
+                    numbers.append(int(r['captainNumber']))
+                except (ValueError, TypeError):
+                    continue
+            return max(numbers) + 1 if numbers else 1
+        except Exception as e:
+            print(f"Supabase captain number check failed: {e}")
+    # SQLAlchemy fallback
     captains = Registration.query.filter_by(role='Captain').order_by(Registration.captainNumber.desc()).all()
     if not captains:
         return 1
-    
-    # Extract captain numbers and find the highest
     captain_numbers = []
     for captain in captains:
         try:
             captain_numbers.append(int(captain.captainNumber))
         except (ValueError, TypeError):
             continue
-    
-    if not captain_numbers:
-        return 1
-    
-    return max(captain_numbers) + 1
+    return max(captain_numbers) + 1 if captain_numbers else 1
 
 @app.route('/sounds/<filename>')
 def serve_sound(filename):
