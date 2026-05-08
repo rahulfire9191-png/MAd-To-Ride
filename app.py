@@ -465,6 +465,32 @@ def get_riders():
     riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).all()
     return jsonify([rider.to_dict() for rider in riders])
 
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    """Change admin password — verifies old password against env var"""
+    try:
+        data = request.get_json()
+        old_password = data.get('oldPassword', '').strip()
+        new_password = data.get('newPassword', '').strip()
+
+        if not old_password or not new_password:
+            return jsonify({'success': False, 'message': 'Both old and new passwords are required'}), 400
+
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'message': 'New password must be at least 6 characters'}), 400
+
+        current_password = os.environ.get('ADMIN_PASSWORD', 'Pa$w0rd@Madmax')
+        if old_password != current_password:
+            return jsonify({'success': False, 'message': 'Current password is incorrect'}), 401
+
+        # Update the in-memory env var for this session
+        os.environ['ADMIN_PASSWORD'] = new_password
+        return jsonify({'success': True, 'message': 'Password changed successfully'})
+
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+
 @app.route('/api/admin-login', methods=['POST'])
 def admin_login():
     try:
@@ -832,19 +858,23 @@ def register():
             else:
                 return jsonify({'success': False, 'message': 'Invalid file type. Allowed: JPG, PNG, PDF'}), 400
 
-        rider_photo_filename = None
+        # Process rider photo — encode to base64 for DB storage
+        rider_photo_base64 = None
         if rider_photo and rider_photo.filename:
             if allowed_image_file(rider_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_photo_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{rider_photo.filename}")
-                rider_photo_filename = upload_file_to_s3(rider_photo, filename)
+                rider_photo_base64 = encode_file_to_base64(rider_photo)
+                if not rider_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
 
-        bike_photo_filename = None
+        # Process bike photo — encode to base64 for DB storage
+        bike_photo_base64 = None
         if bike_photo and bike_photo.filename:
             if allowed_image_file(bike_photo.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_bike_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{bike_photo.filename}")
-                bike_photo_filename = upload_file_to_s3(bike_photo, filename)
+                bike_photo_base64 = encode_file_to_base64(bike_photo)
+                if not bike_photo_base64:
+                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
             else:
                 return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
 
@@ -858,7 +888,7 @@ def register():
             drivingLicenseFile=driving_license_filename,
             experience=data.get('experience', '').strip(),
             alias=data.get('alias', '').strip(),
-            instagram=instagram,
+            instagram=data.get('instagram', '').strip(),
             riderPhoto=rider_photo_base64,
             bikePhoto=bike_photo_base64,
             reason=data.get('message', '').strip(),

@@ -940,9 +940,8 @@ let ceoUnlocked = false;
 let riderToDelete = null;
 let ridersCache = [];
 
-// Supabase Configuration
-const SUPABASE_URL = 'https://yhzxqzokmztxqfbdqvt.supabase.co';
-const SUPABASE_KEY = 'yhIZ02_2DDEEUnWg_1T0NQ_e0fT-OdC';
+// Backend base URL (Flask)
+const API_BASE = '';
 
 
 /* ================================================
@@ -1079,30 +1078,20 @@ function getGradient(seed) {
 
 async function loadRegisteredRiders() {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
-    
+    const response = await fetch('/api/riders');
     if (!response.ok) {
-      console.warn('Database response:', response.status, response.statusText);
+      console.warn('Failed to load riders:', response.status, response.statusText);
       return;
     }
-    
     const riders = await response.json();
     ridersCache = riders;
     renderRidersGrid(riders);
     updateStatNum(riders.length);
-    
-    // Ensure database remains active by refreshing admin dashboard if open
     if (adminLoggedIn) {
       refreshDashboard();
     }
   } catch (e) {
-    console.error('Error loading riders from Supabase:', e);
-    // Don't show error popup on page load
+    console.error('Error loading riders:', e);
   }
 }
 
@@ -1173,12 +1162,11 @@ function updateStatNum(count) {
    ================================================ */
 async function refreshDashboard() {
   try {
-    const response = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await fetch('/api/riders');
+    if (!response.ok) {
+      document.getElementById('dashTotalRiders').textContent = '–';
+      return;
+    }
     const riders = await response.json();
     ridersCache = riders;
     const captains = riders.filter(r => r.role === 'Captain').length;
@@ -1287,46 +1275,42 @@ async function addRiderFromAdmin() {
     errEl.classList.add('show'); return;
   }
 
-  // Create rider object for Supabase
-  const riderData = {
-    firstName: fn,
-    lastName: ln,
-    phone: vPhone,
-    city,
-    bike,
-    role,
-    alias,
-    experience,
-    instagram,
-    reason: message,
-    priority: role === 'Co-Founder' ? 2 : role === 'Captain' ? 3 : 5,
-    captainNumber: captainNum && role === 'Captain' ? captainNum : null,
-    timestamp: new Date().toISOString()
-  };
+  // Build FormData so photos are included
+  const fd = new FormData();
+  fd.append('firstName', fn);
+  fd.append('lastName', ln);
+  fd.append('phone', vPhone);
+  fd.append('city', city);
+  fd.append('bike', bike);
+  fd.append('role', role);
+  fd.append('alias', alias);
+  fd.append('experience', experience);
+  fd.append('instagram', instagram);
+  fd.append('reason', message);
+  if (captainNum && role === 'Captain') fd.append('captainNumber', captainNum);
+  if (riderPhoto) fd.append('riderPhoto', riderPhoto);
+  if (bikePhoto) fd.append('bikePhoto', bikePhoto);
+
+  // Choose endpoint based on role
+  let endpoint = '/api/add-member-manual';
+  if (role === 'Captain') endpoint = '/api/add-captain';
+  else if (role === 'Co-Founder') endpoint = '/api/add-cofounder';
 
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
-      method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify(riderData)
-    });
-    
-    if (res.ok) {
+    const res = await fetch(endpoint, { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.success) {
       showToast(`${fn} ${ln} added as ${role}!`, 'success');
       clearArfForm();
       refreshDashboard();
       refreshRidersTable();
       loadRegisteredRiders();
     } else {
-      errEl.textContent = `❌ Error adding rider. Please try again.`;
+      errEl.textContent = '❌ ' + (data.message || 'Error adding rider. Please try again.');
       errEl.classList.add('show');
     }
   } catch {
-    errEl.textContent = '❌ Network error. Please try again.';
+    errEl.textContent = '❌ Network error. Please check your connection and try again.';
     errEl.classList.add('show');
   }
 }
@@ -1660,13 +1644,9 @@ async function doSecChangePasswordImpl(oldId, newId, confirmId, errId) {
   }
 
   try {
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/admin_credentials`, {
+    const res = await fetch('/api/change-password', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ oldPassword: oldP, newPassword: newP })
     });
     const data = await res.json();
@@ -1756,52 +1736,106 @@ async function handleSubmit() {
     if (bikePhoto) formData.append('bikePhoto', bikePhoto);
     formData.append('message', message);
 
-    // Create rider object for Supabase
-    const riderData = {
-      firstName,
-      lastName,
-      phone: vPhone,
-      city,
-      bike,
-      experience,
-      alias,
-      instagram,
-      message,
-      role: 'Member',
-      priority: 5,
-      timestamp: new Date().toISOString()
-    };
-
-    const res = await fetch(`${SUPABASE_URL}/rest/v1/riders`, {
+    const res = await fetch('/register', {
       method: 'POST',
-      headers: {
-        'apikey': SUPABASE_KEY,
-        'Content-Type': 'application/json',
-        'Prefer': 'return=minimal'
-      },
-      body: JSON.stringify(riderData)
+      body: formData
     });
 
-    if (res.ok) {
+    const data = await res.json();
+
+    if (data.success) {
       document.getElementById('riderNameDisplay').textContent = firstName + ' ' + lastName;
       document.getElementById('successModal').classList.add('active');
       const waLink = document.getElementById('waLink');
+      const waUrl = data.whatsapp_link || 'https://chat.whatsapp.com/HbRgZJa1Rqm5Kbso36WDWf';
       if (waLink) {
-        waLink.onclick = e => { e.preventDefault(); window.open('https://chat.whatsapp.com/', '_blank'); };
-        setTimeout(() => window.open('https://chat.whatsapp.com/', '_blank'), 1500);
+        waLink.href = waUrl;
+        waLink.onclick = null;
+        setTimeout(() => window.open(waUrl, '_blank'), 1500);
       }
       loadRegisteredRiders();
     } else {
-      msgEl.textContent = '❌ Registration failed. Please try again.';
+      msgEl.textContent = '❌ ' + (data.message || 'Registration failed. Please try again.');
       msgEl.classList.add('show');
     }
-  } catch {
-    msgEl.textContent = '❌ Network error. Please try again.';
+  } catch (err) {
+    console.error('Registration error:', err);
+    msgEl.textContent = '❌ Network error. Please check your connection and try again.';
     msgEl.classList.add('show');
   }
 
   btn.disabled = false;
   btn.innerHTML = '🏍️ Submit & Join WhatsApp Group';
+}
+
+/* ================================================
+   MISSING HELPERS
+   ================================================ */
+
+// loadBackupStatus — called on panel open and tab switch
+async function loadBackupStatus() {
+  try {
+    const res = await fetch('/api/backup-status');
+    const data = await res.json();
+    // Update any backup status elements if they exist
+    const el = document.getElementById('backupStatusInfo');
+    if (el) {
+      if (data.backup_exists) {
+        el.innerHTML = `<span style="color:#25D366">✅ Last backup: ${data.backup_time} (${data.rider_count} riders)</span>`;
+      } else {
+        el.innerHTML = `<span style="color:var(--orange)">⚠️ No backup found</span>`;
+      }
+    }
+  } catch (e) {
+    console.warn('Could not load backup status:', e);
+  }
+}
+
+// saveCeoProfile — used by the CEO Edit Modal (separate from the tab form)
+async function saveCeoProfile() {
+  if (!ceoUnlocked) { showToast('CEO profile not unlocked.', 'error'); return; }
+  const fn = document.getElementById('ceoFN').value.trim();
+  const ln = document.getElementById('ceoLN').value.trim();
+  const bike = document.getElementById('ceoBike').value.trim();
+  const errEl = document.getElementById('ceoEditErr');
+  errEl.classList.remove('show');
+
+  if (!fn || !ln || !bike) {
+    errEl.textContent = '⚠️ First name, last name, and bike are required.';
+    errEl.classList.add('show'); return;
+  }
+
+  try {
+    const riders = await (await fetch('/api/riders')).json();
+    const ceo = riders.find(r => r.priority === 1);
+    if (!ceo) { errEl.textContent = '❌ CEO rider not found.'; errEl.classList.add('show'); return; }
+
+    const fd = new FormData();
+    fd.append('phone', ceo.phone); fd.append('timestamp', ceo.timestamp);
+    fd.append('firstName', fn); fd.append('lastName', ln);
+    fd.append('alias', document.getElementById('ceoAlias').value.trim());
+    fd.append('city', document.getElementById('ceoCity').value.trim());
+    fd.append('bike', bike);
+    fd.append('instagram', document.getElementById('ceoInsta').value.trim());
+    fd.append('experience', document.getElementById('ceoExp').value);
+    const rp = document.getElementById('ceoRiderPhoto').files[0]; if (rp) fd.append('riderPhoto', rp);
+    const bp = document.getElementById('ceoBikePhoto').files[0]; if (bp) fd.append('bikePhoto', bp);
+    const sp = document.getElementById('ceoSectionPhoto').files[0]; if (sp) fd.append('sectionPhoto', sp);
+
+    const res = await fetch('/api/update-rider', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (data.success) {
+      showToast('CEO profile saved!', 'success');
+      closeAdminModal('ceoEditModal');
+      loadRegisteredRiders();
+    } else {
+      errEl.textContent = '❌ ' + (data.message || 'Error saving.');
+      errEl.classList.add('show');
+    }
+  } catch {
+    errEl.textContent = '❌ Network error. Please try again.';
+    errEl.classList.add('show');
+  }
 }
 
 /* ================================================
