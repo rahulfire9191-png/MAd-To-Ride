@@ -914,6 +914,29 @@ def register():
         db.session.add(registration)
         db.session.commit()
 
+        # ── Write to Supabase ────────────────────────────────────────────────
+        if supabase:
+            try:
+                supabase.table('riders').insert({
+                    'firstName': registration.firstName,
+                    'lastName': registration.lastName,
+                    'phone': registration.phone,
+                    'city': registration.city,
+                    'bike': registration.bike,
+                    'experience': registration.experience,
+                    'alias': registration.alias,
+                    'instagram': registration.instagram,
+                    'riderPhoto': registration.riderPhoto,
+                    'bikePhoto': registration.bikePhoto,
+                    'reason': registration.reason,
+                    'role': registration.role,
+                    'priority': registration.priority,
+                    'timestamp': registration.timestamp
+                }).execute()
+                print("Registration synced to Supabase")
+            except Exception as e:
+                print(f"Supabase sync failed (data saved locally): {e}")
+
         # Auto-backup to external storage and cloud sync
         try:
             sync_to_external_storage()
