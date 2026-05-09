@@ -325,26 +325,121 @@ input[type="file"].form-input{padding:8px 16px;cursor:pointer}
 .backup-status-item .bs-value.ok{color:#25D366}
 .backup-status-item .bs-value.warn{color:var(--orange)}
 
-/* Responsive */
+/* ================================================
+   RESPONSIVE — MOBILE & TABLET
+   ================================================ */
+
+/* Tablet (≤900px) */
 @media(max-width:900px){
-  nav{padding:16px 24px}
+  nav{padding:14px 20px}
+  .nav-logo{font-size:1.8rem}
   .mobile-menu-toggle{display:block}
-  .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:var(--darker);flex-direction:column;padding:20px;box-shadow:0 4px 20px rgba(0,0,0,0.3);border-bottom:1px solid var(--border)}
+  .nav-links{display:none;position:absolute;top:100%;left:0;right:0;background:rgba(5,5,5,0.98);flex-direction:column;padding:16px 20px;box-shadow:0 8px 24px rgba(0,0,0,0.5);border-bottom:1px solid var(--border);gap:4px}
   .nav-links.mobile-active{display:flex}
-  .hero{padding:100px 24px 60px}
-  section{padding:70px 24px}
-  .about-grid,.join-layout{grid-template-columns:1fr;gap:40px}
+  .nav-links li{width:100%}
+  .nav-links a{display:block;padding:10px 0;font-size:1rem;border-bottom:1px solid rgba(255,255,255,0.05)}
+  .nav-cta{display:inline-block;margin-top:8px;text-align:center}
+  .nav-admin-btn{width:100%;text-align:left;padding:10px 0}
+
+  .hero{padding:90px 20px 60px}
+  .hero h1{font-size:clamp(3.5rem,14vw,6rem)}
+  .hero-sub{font-size:1rem}
+  .hero-actions{flex-direction:column;gap:12px}
+  .btn-primary,.btn-secondary{width:100%;justify-content:center;text-align:center}
+
+  .stats-bar{padding:16px 20px;flex-wrap:wrap;gap:16px;justify-content:space-around}
+  .stat-item{border-right:none;padding:8px 12px;min-width:80px}
+  .stat-num{font-size:2rem}
+
+  section{padding:60px 20px}
+  .about-grid,.join-layout{grid-template-columns:1fr;gap:32px}
   .features-grid{grid-template-columns:1fr}
-  .riders-grid{grid-template-columns:1fr 1fr}
-  .footer-grid{grid-template-columns:1fr;gap:32px}
-  .stats-bar{padding:20px 24px;flex-wrap:wrap;gap:20px}
-  .stat-item{border-right:none;padding:0 16px}
+  .footer-grid{grid-template-columns:1fr;gap:28px}
   .footer-bottom{flex-direction:column;gap:8px;text-align:center}
   .form-row{grid-template-columns:1fr}
+  .form-card{padding:28px 20px}
+
+  /* Riders grid — 2 cols on tablet */
+  .riders-grid{grid-template-columns:repeat(2,1fr);gap:12px;padding:16px 20px 32px}
+
   .admin-layout{grid-template-columns:1fr}
   .admin-sidebar{display:none}
   .admin-stats-row{grid-template-columns:repeat(2,1fr)}
   .admin-modal .form-row{grid-template-columns:1fr}
+  .admin-main{padding:20px}
+  .admin-topbar{padding:0 16px}
+
+  .wa-float{bottom:20px;right:16px}
+  .wa-float a{width:52px;height:52px;font-size:1.5rem}
+}
+
+/* Mobile (≤480px) */
+@media(max-width:480px){
+  nav{padding:12px 16px}
+  .nav-logo{font-size:1.5rem;letter-spacing:2px}
+
+  .hero{padding:80px 16px 48px}
+  .hero h1{font-size:clamp(3rem,16vw,5rem);letter-spacing:2px}
+  .hero-sub{font-size:0.9rem;margin:16px 0 28px}
+  .hero-badge{font-size:0.7rem;padding:5px 12px}
+
+  .stats-bar{padding:12px 16px;gap:8px}
+  .stat-item{padding:6px 8px}
+  .stat-num{font-size:1.6rem}
+  .stat-label{font-size:0.65rem}
+
+  section{padding:48px 16px}
+  .section-title{font-size:clamp(2rem,8vw,3rem)}
+
+  .ceo-card{padding:24px 16px;clip-path:none}
+  .ceo-avatar{width:80px;height:80px;font-size:2rem}
+  .ceo-name{font-size:1.8rem}
+
+  .form-card{padding:20px 16px}
+  .form-title{font-size:2rem}
+  .submit-btn{font-size:0.9rem;padding:14px 16px;clip-path:none}
+
+  /* Riders grid — 2 cols on small mobile, fill space */
+  .riders-grid{
+    display:grid;
+    grid-template-columns:repeat(2,1fr);
+    gap:10px;
+    padding:12px 16px 28px;
+  }
+  .rider-card{padding:12px 10px;border-radius:10px}
+  .rider-avatar{width:44px;height:44px;font-size:1rem}
+  .rider-name{font-size:0.75rem}
+  .rider-alias{font-size:0.6rem}
+  .rider-bike{font-size:0.55rem}
+
+  .modal-box{padding:32px 20px}
+  .modal-title{font-size:1.8rem}
+
+  footer{padding:40px 16px 24px}
+  .footer-brand .nav-logo{font-size:1.8rem}
+
+  .admin-main{padding:16px}
+  .admin-topbar-title{font-size:1.3rem}
+  .admin-stats-row{grid-template-columns:repeat(2,1fr);gap:10px}
+  .admin-cards-grid{grid-template-columns:1fr}
+}
+
+/* Landscape phone — fill riders grid properly */
+@media(max-height:500px) and (orientation:landscape){
+  .hero{padding:70px 20px 40px;min-height:auto}
+  .riders-grid{
+    grid-template-columns:repeat(auto-fill,minmax(160px,1fr));
+    gap:10px;
+    padding:12px 20px 24px;
+  }
+}
+
+/* Large screens — ensure riders grid fills space */
+@media(min-width:1200px){
+  .riders-grid{
+    grid-template-columns:repeat(auto-fill,minmax(180px,1fr));
+    padding:20px 48px 48px;
+  }
 }
 </style>
 </head>
