@@ -1,442 +1,84 @@
-from flask import Flask, render_template, request, jsonify, redirect, url_for, send_from_directory
-from flask_sqlalchemy import SQLAlchemy
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from werkzeug.utils import secure_filename
 from datetime import datetime
-import json
-import logging
-from functools import wraps
-import requests
 import base64
 import os
-import psycopg2
+import re
 from dotenv import load_dotenv
-import boto3
-from botocore.exceptions import NoCredentialsError
 from supabase import create_client, Client
 
-# Load environment variables
+# ── Load env ─────────────────────────────────────────────────────────────────
 load_dotenv()
 
 app = Flask(__name__, template_folder='templates', static_folder='.')
 
-# ── Supabase client ──────────────────────────────────────────────────────────
+# ── Supabase ──────────────────────────────────────────────────────────────────
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY) if SUPABASE_URL and SUPABASE_KEY else None
 
-# ── SQLAlchemy fallback (SQLite for local dev if Supabase not configured) ────
-DATABASE_URL = os.environ.get('DATABASE_URL', 'sqlite:///registrations.db')
-app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+if not SUPABASE_URL or not SUPABASE_KEY:
+    raise RuntimeError('SUPABASE_URL and SUPABASE_KEY must be set in .env')
 
-# AWS S3 Configuration (for file storage)
-AWS_ACCESS_KEY = os.environ.get('AWS_ACCESS_KEY_ID')
-AWS_SECRET_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY')
-AWS_BUCKET_NAME = os.environ.get('AWS_BUCKET_NAME')
-AWS_REGION = os.environ.get('AWS_REGION', 'us-east-1')
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# File upload configuration
-UPLOAD_FOLDER = 'uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'pdf'}
-MAX_FILE_SIZE = 5 * 1024 * 1024  # 5MB
+# ── Config ────────────────────────────────────────────────────────────────────
+app.config['MAX_CONTENT_LENGTH'] = 5 * 1024 * 1024   # 5 MB max upload
 
-app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['MAX_CONTENT_LENGTH'] = MAX_FILE_SIZE
+ALLOWED_IMAGE_EXT = {'png', 'jpg', 'jpeg'}
+ALLOWED_FILE_EXT  = {'png', 'jpg', 'jpeg', 'pdf'}
 
-# Initialize database
-db = SQLAlchemy(app)
-
-# S3 Client (if AWS credentials are available)
-s3_client = None
-if AWS_ACCESS_KEY and AWS_SECRET_KEY and AWS_BUCKET_NAME:
-    s3_client = boto3.client(
-        's3',
-        aws_access_key_id=AWS_ACCESS_KEY,
-        aws_secret_access_key=AWS_SECRET_KEY,
-        region_name=AWS_REGION
-    )
-
-# Database model for registrations
-class Registration(db.Model):
-    __tablename__ = 'registrations'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    firstName = db.Column(db.String(100), nullable=False)
-    lastName = db.Column(db.String(100), nullable=False)
-    phone = db.Column(db.String(20), unique=True, nullable=False)
-    city = db.Column(db.String(100), nullable=False)
-    bike = db.Column(db.String(200), nullable=False)
-    drivingLicenseFile = db.Column(db.String(500))
-    experience = db.Column(db.String(200))
-    alias = db.Column(db.String(100))
-    instagram = db.Column(db.String(200))
-    riderPhoto = db.Column(db.Text)  # Store as base64
-    bikePhoto = db.Column(db.Text)  # Store as base64
-    sectionPhoto = db.Column(db.Text)  # Store as base64
-    reason = db.Column(db.Text)
-    role = db.Column(db.String(50), default='Member')
-    priority = db.Column(db.Integer, default=5)
-    captainNumber = db.Column(db.String(10))
-    timestamp = db.Column(db.String(50), nullable=False)
-
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'firstName': self.firstName,
-            'lastName': self.lastName,
-            'phone': self.phone,
-            'city': self.city,
-            'bike': self.bike,
-            'drivingLicenseFile': self.drivingLicenseFile,
-            'experience': self.experience,
-            'alias': self.alias,
-            'instagram': self.instagram,
-            'riderPhoto': self.riderPhoto,
-            'bikePhoto': self.bikePhoto,
-            'sectionPhoto': self.sectionPhoto,
-            'reason': self.reason,
-            'role': self.role,
-            'priority': self.priority,
-            'captainNumber': self.captainNumber,
-            'timestamp': self.timestamp
-        }
-
-# Create uploads folder if it doesn't exist (for local development and Render.com)
-try:
-    upload_dir = os.path.abspath(UPLOAD_FOLDER)
-    if not os.path.exists(upload_dir):
-        os.makedirs(upload_dir, exist_ok=True)
-        print(f"Created uploads directory: {upload_dir}")
-    else:
-        print(f"Uploads directory exists: {upload_dir}")
-except Exception as e:
-    print(f"Error creating uploads directory: {e}")
-    # Fallback to current directory
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in {'pdf', 'png', 'jpg', 'jpeg'}
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_FILE_EXT
 
-def allowed_image_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in {'png', 'jpg', 'jpeg'}
+def allowed_image(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_IMAGE_EXT
 
-def encode_file_to_base64(file):
-    """Encode uploaded file to base64 string"""
-    if file and file.filename:
-        try:
-            file.seek(0)  # Reset file pointer
-            file_data = file.read()
-            import base64
-            encoded = base64.b64encode(file_data).decode('utf-8')
-            file_type = file.content_type or 'image/jpeg'
-            return f"data:{file_type};base64,{encoded}"
-        except Exception as e:
-            print(f"Error encoding file to base64: {e}")
-            return None
-    return None
-
-def save_to_google_drive(data):
-    """Save data to Google Drive using OAuth2 API"""
-    try:
-        # Try Google Drive OAuth2 API first
-        from googleapiclient.discovery import build
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        from google.auth.transport.requests import Request
-        from googleapiclient.http import MediaIoBaseUpload
-        from googleapiclient.errors import HttpError
-        
-        # Check if Google Drive credentials are available
-        credentials_json = os.environ.get('GOOGLE_DRIVE_CREDENTIALS')
-        if credentials_json:
-            import json
-            credentials_info = json.loads(credentials_json)
-            
-            SCOPES = ['https://www.googleapis.com/auth/drive.file']
-            creds = None
-            
-            # Try to load existing credentials
-            token_file = 'token.json'
-            if os.path.exists(token_file):
-                from google.oauth2.credentials import Credentials
-                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-            
-            # If no valid credentials, get new ones
-            if not creds or not creds.valid:
-                flow = InstalledAppFlow.from_client_config(
-                    client_config=credentials_info,
-                    scopes=SCOPES,
-                    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
-                )
-                creds = flow.run_local_server(port=0)
-                
-                # Save credentials for future use
-                with open(token_file, 'w') as token:
-                    token.write(creds.to_json())
-            
-            # Build Google Drive service
-            service = build('drive', 'v3', credentials=creds)
-            
-            # Create backup data
-            backup_filename = f"mtr_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-            
-            # Upload to Google Drive
-            file_metadata = {
-                'name': backup_filename,
-                'parents': [os.environ.get('GOOGLE_DRIVE_FOLDER_ID', 'root')]
-            }
-            
-            media = MediaIoBaseUpload(
-                'application/json',
-                json.dumps(data, indent=2),
-                resumable=True
-            )
-            
-            file = service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            )
-            
-            print(f"Successfully uploaded {backup_filename} to Google Drive")
-            return True
-        else:
-            # Fallback to local JSON file
-            backup_file = 'mtr_backup.json'
-            with open(backup_file, 'w') as f:
-                json.dump(data, f, indent=2)
-            print(f"Data backed up to local file: {backup_file}")
-            return True
-            
-    except Exception as e:
-        print(f"Google Drive backup failed: {e}")
-        return False
-
-def load_from_google_drive():
-    """Load data from Google Drive or backup file"""
-    try:
-        # Try Google Drive OAuth2 API first
-        from googleapiclient.discovery import build
-        from google.oauth2.credentials import Credentials
-        from google_auth_oauthlib.flow import InstalledAppFlow
-        from google.auth.transport.requests import Request
-        
-        # Check if Google Drive credentials are available
-        credentials_json = os.environ.get('GOOGLE_DRIVE_CREDENTIALS')
-        if credentials_json:
-            import json
-            credentials_info = json.loads(credentials_json)
-            
-            SCOPES = ['https://www.googleapis.com/auth/drive.file']
-            creds = None
-            
-            # Try to load existing credentials
-            token_file = 'token.json'
-            if os.path.exists(token_file):
-                from google.oauth2.credentials import Credentials
-                creds = Credentials.from_authorized_user_file(token_file, SCOPES)
-            
-            # If no valid credentials, get new ones
-            if not creds or not creds.valid:
-                flow = InstalledAppFlow.from_client_config(
-                    client_config=credentials_info,
-                    scopes=SCOPES,
-                    redirect_uri='urn:ietf:wg:oauth:2.0:oob'
-                )
-                creds = flow.run_local_server(port=0)
-                
-                # Save credentials for future use
-                with open(token_file, 'w') as token:
-                    token.write(creds.to_json())
-            
-            # Build Google Drive service
-            service = build('drive', 'v3', credentials=creds)
-            
-            # Get latest backup file from Google Drive
-            results = service.files().list(
-                q="name contains 'mtr_backup_' and mimeType='application/json'",
-                orderBy='createdTime desc',
-                pageSize=1
-            )
-            
-            if results.get('files'):
-                latest_file = results['files'][0]
-                file_id = latest_file['id']
-                
-                # Download the latest backup
-                request = service.files().get_media(fileId=file_id)
-                file_content = request.execute()
-                
-                import json
-                data = json.loads(file_content.decode('utf-8'))
-                print(f"Loaded {len(data)} riders from Google Drive")
-                return data
-            
-        # Fallback to local JSON file
-        backup_file = 'mtr_backup.json'
-        if os.path.exists(backup_file):
-            with open(backup_file, 'r') as f:
-                data = json.load(f)
-            print(f"Loaded {len(data)} riders from local backup")
-            return data
+def encode_base64(file):
+    """Read an uploaded file and return a base64 data-URI string."""
+    if not file or not file.filename:
         return None
+    try:
+        file.seek(0)
+        data = file.read()
+        encoded = base64.b64encode(data).decode('utf-8')
+        mime = file.content_type or 'image/jpeg'
+        return f"data:{mime};base64,{encoded}"
     except Exception as e:
-        print(f"Google Drive load failed: {e}")
+        print(f"base64 encode error: {e}")
         return None
 
-def auto_sync_to_cloud():
-    """Automatic sync to cloud storage"""
+def validate_phone(phone):
+    """Return cleaned 10-digit Indian mobile number or None."""
+    clean = re.sub(r'[\s\-\(\)]', '', phone)
+    return clean if re.match(r'^[6789]\d{9}$', clean) else None
+
+def phone_exists(phone):
+    """Return True if phone already registered in Supabase."""
     try:
-        riders = Registration.query.all()
-        backup_data = []
-        
-        for rider in riders:
-            backup_data.append({
-                'firstName': rider.firstName,
-                'lastName': rider.lastName,
-                'phone': rider.phone,
-                'city': rider.city,
-                'bike': rider.bike,
-                'experience': rider.experience,
-                'alias': rider.alias,
-                'instagram': rider.instagram,
-                'riderPhoto': rider.riderPhoto,
-                'bikePhoto': rider.bikePhoto,
-                'sectionPhoto': rider.sectionPhoto,
-                'reason': rider.reason,
-                'role': rider.role,
-                'priority': rider.priority,
-                'timestamp': rider.timestamp
-            })
-        
-        # Save to cloud storage
-        success = save_to_google_drive(backup_data)
-        
-        if success:
-            print(f"Auto-synced {len(backup_data)} riders to cloud storage")
-        else:
-            print("Auto-sync to cloud failed")
-            
-        return success
+        res = supabase.table('riders').select('phone').eq('phone', phone).execute()
+        return len(res.data) > 0
     except Exception as e:
-        print(f"Auto-sync failed: {e}")
+        print(f"Duplicate check error: {e}")
         return False
 
-def sync_to_external_storage():
-    """Sync current database to external storage"""
+def next_captain_number():
+    """Return the next auto-assigned captain number."""
     try:
-        riders = Registration.query.all()
-        backup_data = []
-        
-        for rider in riders:
-            backup_data.append({
-                'firstName': rider.firstName,
-                'lastName': rider.lastName,
-                'phone': rider.phone,
-                'city': rider.city,
-                'bike': rider.bike,
-                'experience': rider.experience,
-                'alias': rider.alias,
-                'instagram': rider.instagram,
-                'riderPhoto': rider.riderPhoto,
-                'bikePhoto': rider.bikePhoto,
-                'sectionPhoto': rider.sectionPhoto,
-                'reason': rider.reason,
-                'role': rider.role,
-                'priority': rider.priority,
-                'timestamp': rider.timestamp
-            })
-        
-        save_to_google_drive(backup_data)
-        return True
+        res = supabase.table('riders').select('captainNumber').eq('role', 'Captain').execute()
+        nums = []
+        for r in res.data:
+            try:
+                nums.append(int(r['captainNumber']))
+            except (ValueError, TypeError):
+                pass
+        return max(nums) + 1 if nums else 1
     except Exception as e:
-        print(f"Sync failed: {e}")
-        return False
-
-def upload_file_to_s3(file, filename, folder='uploads'):
-    """Upload file to S3 or save locally if S3 not configured"""
-    if s3_client:
-        try:
-            s3_client.upload_fileobj(
-                file,
-                AWS_BUCKET_NAME,
-                f"{folder}/{filename}",
-                ExtraArgs={'ContentType': file.content_type or 'application/octet-stream'}
-            )
-            return f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{folder}/{filename}"
-        except NoCredentialsError:
-            print("AWS credentials not available, saving locally")
-    
-    # Fallback to local storage
-    try:
-        # Use the configured upload folder directly
-        upload_dir = app.config['UPLOAD_FOLDER']
-        if not os.path.exists(upload_dir):
-            os.makedirs(upload_dir, exist_ok=True)
-            print(f"Created upload directory: {upload_dir}")
-        
-        file_path = os.path.join(upload_dir, filename)
-        file.save(file_path)
-        print(f"File saved locally to: {file_path}")
-        print(f"File will be served at: /uploads/{filename}")
-        return f"/uploads/{filename}"
-    except Exception as e:
-        print(f"Error saving file locally: {e}")
-        return None
-
-def validate_mobile_number(phone):
-    """Validate 10-digit Indian mobile number"""
-    import re
-    clean_phone = re.sub(r'[\s\-\(\)]', '', phone)
-    if re.match(r'^[6789]\d{9}$', clean_phone):
-        return clean_phone
-    return None
-
-def check_duplicate_mobile(phone):
-    """Check if mobile number already exists — checks Supabase first, then SQLite"""
-    validated_phone = validate_mobile_number(phone)
-    if not validated_phone:
-        return False
-    # Check Supabase first
-    if supabase:
-        try:
-            res = supabase.table('riders').select('phone').eq('phone', validated_phone).execute()
-            if res.data:
-                return True
-        except Exception as e:
-            print(f"Supabase duplicate check failed, falling back to SQLite: {e}")
-    # SQLAlchemy fallback
-    return Registration.query.filter_by(phone=validated_phone).first() is not None
-
-def get_next_captain_number():
-    """Get the next available captain number"""
-    # Try Supabase first
-    if supabase:
-        try:
-            res = supabase.table('riders').select('captainNumber').eq('role', 'Captain').execute()
-            numbers = []
-            for r in res.data:
-                try:
-                    numbers.append(int(r['captainNumber']))
-                except (ValueError, TypeError):
-                    continue
-            return max(numbers) + 1 if numbers else 1
-        except Exception as e:
-            print(f"Supabase captain number check failed: {e}")
-    # SQLAlchemy fallback
-    captains = Registration.query.filter_by(role='Captain').order_by(Registration.captainNumber.desc()).all()
-    if not captains:
+        print(f"Captain number error: {e}")
         return 1
-    captain_numbers = []
-    for captain in captains:
-        try:
-            captain_numbers.append(int(captain.captainNumber))
-        except (ValueError, TypeError):
-            continue
-    return max(captain_numbers) + 1 if captain_numbers else 1
+
+# ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route('/sounds/<filename>')
 def serve_sound(filename):
@@ -444,605 +86,95 @@ def serve_sound(filename):
 
 @app.route('/')
 def index():
-    # Try Supabase first
-    if supabase:
-        try:
-            res = supabase.table('riders').select('*').order('priority').limit(12).execute()
-            recent_riders = res.data if res.data else []
-            return render_template('index.html', riders=recent_riders)
-        except Exception as e:
-            print(f"Supabase index load failed, falling back: {e}")
-    # SQLAlchemy fallback
-    riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).limit(12).all()
-    recent_riders = [rider.to_dict() for rider in riders] if riders else []
-    return render_template('index.html', riders=recent_riders)
+    try:
+        res = supabase.table('riders').select('*').order('priority').limit(12).execute()
+        riders = res.data or []
+    except Exception as e:
+        print(f"Index load error: {e}")
+        riders = []
+    return render_template('index.html', riders=riders)
 
 @app.route('/health')
 def health_check():
-    """Health check route for deployment debugging"""
     try:
-        supabase_status = 'not configured'
-        supabase_count = 0
-        if supabase:
-            try:
-                res = supabase.table('riders').select('id', count='exact').execute()
-                supabase_count = res.count if hasattr(res, 'count') else len(res.data)
-                supabase_status = 'connected'
-            except Exception as e:
-                supabase_status = f'error: {str(e)}'
-
-        rider_count = Registration.query.count()
+        res = supabase.table('riders').select('id', count='exact').execute()
+        count = res.count if hasattr(res, 'count') else len(res.data)
         return jsonify({
             'status': 'healthy',
-            'database': 'connected',
-            'rider_count': rider_count,
-            'supabase': supabase_status,
-            'supabase_riders': supabase_count,
-            'timestamp': datetime.now().isoformat(),
-            'version': '2.0'
+            'supabase': 'connected',
+            'rider_count': count,
+            'timestamp': datetime.now().isoformat()
         })
     except Exception as e:
-        return jsonify({
-            'status': 'unhealthy',
-            'error': str(e),
-            'timestamp': datetime.now().isoformat()
-        }), 500
+        return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+
+# ── Public: get all riders ────────────────────────────────────────────────────
 
 @app.route('/api/riders', methods=['GET'])
 def get_riders():
-    # Try Supabase first
-    if supabase:
-        try:
-            res = supabase.table('riders').select('*').order('priority').execute()
-            return jsonify(res.data)
-        except Exception as e:
-            print(f"Supabase read failed, falling back to SQLAlchemy: {e}")
-    # SQLAlchemy fallback
-    riders = Registration.query.order_by(Registration.priority.asc(), Registration.timestamp.desc()).all()
-    return jsonify([rider.to_dict() for rider in riders])
-
-@app.route('/api/change-password', methods=['POST'])
-def change_password():
-    """Change admin password — verifies old password against env var"""
     try:
-        data = request.get_json()
-        old_password = data.get('oldPassword', '').strip()
-        new_password = data.get('newPassword', '').strip()
-
-        if not old_password or not new_password:
-            return jsonify({'success': False, 'message': 'Both old and new passwords are required'}), 400
-
-        if len(new_password) < 6:
-            return jsonify({'success': False, 'message': 'New password must be at least 6 characters'}), 400
-
-        current_password = os.environ.get('ADMIN_PASSWORD', 'Pa$w0rd@Madmax')
-        if old_password != current_password:
-            return jsonify({'success': False, 'message': 'Current password is incorrect'}), 401
-
-        # Update the in-memory env var for this session
-        os.environ['ADMIN_PASSWORD'] = new_password
-        return jsonify({'success': True, 'message': 'Password changed successfully'})
-
+        res = supabase.table('riders').select('*').order('priority').execute()
+        return jsonify(res.data)
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print(f"Get riders error: {e}")
+        return jsonify([]), 500
 
-
-@app.route('/api/admin-login', methods=['POST'])
-def admin_login():
-    try:
-        data = request.get_json()
-        username = data.get('username', '').strip()
-        password = data.get('password', '').strip()
-        
-        # Admin credentials
-        ADMIN_USERNAME = os.environ.get('ADMIN_USERNAME', 'Madmax')
-        ADMIN_PASSWORD = os.environ.get('ADMIN_PASSWORD', 'Pa$$w0rd@Madmax')
-        
-        if username == ADMIN_USERNAME and password == ADMIN_PASSWORD:
-            return jsonify({
-                'success': True,
-                'message': 'Login successful'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'Invalid username or password'
-            }), 401
-            
-    except Exception as e:
-        return jsonify({
-            'success': False,
-            'message': 'Login failed'
-        }), 500
-
-def check_admin_auth():
-    # In production, use proper session management or JWT tokens
-    # For now, we'll use a simple session-based approach
-    return True  # Simplified for demo - in production, verify session/token
-
-@app.route('/api/update-section', methods=['POST'])
-def update_section():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-    try:
-        data = request.get_json()
-        section = data.get('section')
-        content = data.get('content')
-        
-        if not section or not content:
-            return jsonify({'success': False, 'message': 'Section and content are required'}), 400
-        
-        # For now, just return success (in production, you'd save to database or files)
-        return jsonify({'success': True, 'message': 'Section updated successfully'})
-        
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/delete-rider', methods=['POST'])
-def delete_rider():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-    try:
-        data = request.get_json()
-        phone = data.get('phone', '').strip()
-        timestamp = data.get('timestamp', '').strip()
-        
-        if not phone or not timestamp:
-            return jsonify({'success': False, 'message': 'Phone and timestamp are required'}), 400
-        
-        # Find the rider to check if it's CEO
-        rider_to_delete = Registration.query.filter_by(phone=phone, timestamp=timestamp).first()
-        
-        if not rider_to_delete:
-            return jsonify({'success': False, 'message': 'Rider not found'}), 404
-        
-        # Prevent deletion of CEO/Founder (priority 1)
-        if rider_to_delete.priority == 1:
-            return jsonify({'success': False, 'message': 'Cannot delete CEO/Founder. This member is protected.'}), 403
-        
-        # Additional protection: Check if this is Rahul Choudhari by name
-        if (rider_to_delete.firstName.strip().lower() == 'rahul' and 
-            rider_to_delete.lastName.strip().lower() == 'choudhari'):
-            return jsonify({'success': False, 'message': 'Cannot delete CEO/Founder. This member is protected.'}), 403
-        
-        # Delete the rider
-        db.session.delete(rider_to_delete)
-        db.session.commit()
-
-        # ── Sync delete to Supabase ──────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').delete().eq('phone', phone).execute()
-            except Exception as e:
-                print(f"Supabase delete sync failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Rider deleted successfully'})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/add-cofounder', methods=['POST'])
-def add_cofounder():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-    try:
-        # Check if form data or JSON
-        if request.content_type.startswith('multipart/form-data'):
-            data = request.form.to_dict()
-            rider_photo = request.files.get('riderPhoto')
-            bike_photo = request.files.get('bikePhoto')
-        else:
-            data = request.get_json()
-            rider_photo = None
-            bike_photo = None
-        
-        required = ['firstName', 'lastName', 'alias', 'bike', 'phone']
-        for field in required:
-            if not data.get(field, '').strip():
-                return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        # Process rider photo
-        rider_photo_base64 = None
-        if rider_photo and rider_photo.filename:
-            if allowed_image_file(rider_photo.filename):
-                rider_photo_base64 = encode_file_to_base64(rider_photo)
-                if not rider_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
-
-        # Process bike photo
-        bike_photo_base64 = None
-        if bike_photo and bike_photo.filename:
-            if allowed_image_file(bike_photo.filename):
-                bike_photo_base64 = encode_file_to_base64(bike_photo)
-                if not bike_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
-
-        # Add cofounder with special role and priority
-        cofounder = Registration(
-            firstName=data.get('firstName', '').strip(),
-            lastName=data.get('lastName', '').strip(),
-            phone=data.get('phone', '').strip(),
-            city='Pune',
-            bike=data.get('bike', '').strip(),
-            experience=data.get('experience', '10+ years'),
-            alias=data.get('alias', '').strip(),
-            instagram=data.get('instagram', '').strip(),
-            riderPhoto=rider_photo_base64,
-            bikePhoto=bike_photo_base64,
-            reason='Co-Founder of MTR Brotherhood',
-            role=data.get('role', 'Co-Founder'),
-            priority=2,
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        )
-        
-        db.session.add(cofounder)
-        db.session.commit()
-
-        # ── Sync to Supabase ─────────────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').insert({
-                    'firstName': cofounder.firstName,
-                    'lastName': cofounder.lastName,
-                    'phone': cofounder.phone,
-                    'city': cofounder.city,
-                    'bike': cofounder.bike,
-                    'experience': cofounder.experience,
-                    'alias': cofounder.alias,
-                    'instagram': cofounder.instagram,
-                    'riderPhoto': cofounder.riderPhoto,
-                    'bikePhoto': cofounder.bikePhoto,
-                    'reason': cofounder.reason,
-                    'role': cofounder.role,
-                    'priority': cofounder.priority,
-                    'timestamp': cofounder.timestamp
-                }).execute()
-            except Exception as e:
-                print(f"Supabase sync failed: {e}")
-
-        # Auto-backup to external storage
-        try:
-            sync_to_external_storage()
-            print("Auto-backup completed after cofounder addition")
-        except Exception as e:
-            print(f"Auto-backup failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Co-Founder added successfully'})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/add-captain', methods=['POST'])
-def add_captain():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-    try:
-        # Check if form data or JSON
-        if request.content_type.startswith('multipart/form-data'):
-            data = request.form.to_dict()
-            rider_photo = request.files.get('riderPhoto')
-            bike_photo = request.files.get('bikePhoto')
-        else:
-            data = request.get_json()
-            rider_photo = None
-            bike_photo = None
-        
-        required = ['firstName', 'lastName', 'alias', 'bike', 'phone']
-        for field in required:
-            if not data.get(field, '').strip():
-                return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        # Process rider photo
-        rider_photo_base64 = None
-        if rider_photo and rider_photo.filename:
-            if allowed_image_file(rider_photo.filename):
-                rider_photo_base64 = encode_file_to_base64(rider_photo)
-                if not rider_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
-
-        # Process bike photo
-        bike_photo_base64 = None
-        if bike_photo and bike_photo.filename:
-            if allowed_image_file(bike_photo.filename):
-                bike_photo_base64 = encode_file_to_base64(bike_photo)
-                if not bike_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
-
-        # Get captain number from form or auto-assign
-        captain_number = data.get('captainNumber')
-        if captain_number:
-            try:
-                captain_number = str(int(captain_number))
-            except (ValueError, TypeError):
-                captain_number = str(get_next_captain_number())
-        else:
-            captain_number = str(get_next_captain_number())
-        
-        # Add captain with special role and priority
-        captain = Registration(
-            firstName=data.get('firstName', '').strip(),
-            lastName=data.get('lastName', '').strip(),
-            phone=data.get('phone', '').strip(),
-            city='Pune',
-            bike=data.get('bike', '').strip(),
-            experience=data.get('experience', '5+ years'),
-            alias=data.get('alias', '').strip(),
-            instagram=data.get('instagram', '').strip(),
-            riderPhoto=rider_photo_base64,
-            bikePhoto=bike_photo_base64,
-            reason=f'Captain {captain_number} of MTR Brotherhood',
-            role=data.get('role', 'Captain'),
-            captainNumber=captain_number,
-            priority=3,
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        )
-        
-        db.session.add(captain)
-        db.session.commit()
-
-        # ── Sync to Supabase ─────────────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').insert({
-                    'firstName': captain.firstName,
-                    'lastName': captain.lastName,
-                    'phone': captain.phone,
-                    'city': captain.city,
-                    'bike': captain.bike,
-                    'experience': captain.experience,
-                    'alias': captain.alias,
-                    'instagram': captain.instagram,
-                    'riderPhoto': captain.riderPhoto,
-                    'bikePhoto': captain.bikePhoto,
-                    'reason': captain.reason,
-                    'role': captain.role,
-                    'priority': captain.priority,
-                    'captainNumber': captain.captainNumber,
-                    'timestamp': captain.timestamp
-                }).execute()
-            except Exception as e:
-                print(f"Supabase sync failed: {e}")
-
-        # Auto-backup to external storage
-        try:
-            sync_to_external_storage()
-            print("Auto-backup completed after captain addition")
-        except Exception as e:
-            print(f"Auto-backup failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Captain added successfully'})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/add-member-manual', methods=['POST'])
-def add_member_manual():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-    try:
-        # Check if form data or JSON
-        if request.content_type.startswith('multipart/form-data'):
-            data = request.form.to_dict()
-            rider_photo = request.files.get('riderPhoto')
-            bike_photo = request.files.get('bikePhoto')
-        else:
-            data = request.get_json()
-            rider_photo = None
-            bike_photo = None
-        
-        required = ['firstName', 'lastName', 'phone', 'city', 'bike']
-        for field in required:
-            if not data.get(field, '').strip():
-                return jsonify({'success': False, 'message': f'{field} is required'}), 400
-        
-        # Process rider photo
-        rider_photo_base64 = None
-        if rider_photo and rider_photo.filename:
-            if allowed_image_file(rider_photo.filename):
-                rider_photo_base64 = encode_file_to_base64(rider_photo)
-                if not rider_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
-
-        # Process bike photo
-        bike_photo_base64 = None
-        if bike_photo and bike_photo.filename:
-            if allowed_image_file(bike_photo.filename):
-                bike_photo_base64 = encode_file_to_base64(bike_photo)
-                if not bike_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
-
-        # Prepare registration data
-        registration_data = {
-            'firstName': data.get('firstName', '').strip(),
-            'lastName': data.get('lastName', '').strip(),
-            'phone': data.get('phone', '').strip(),
-            'city': data.get('city', '').strip(),
-            'bike': data.get('bike', '').strip(),
-            'experience': data.get('experience', '').strip(),
-            'alias': data.get('alias', '').strip(),
-            'instagram': data.get('instagram', '').strip(),
-            'riderPhoto': rider_photo_base64,
-            'bikePhoto': bike_photo_base64,
-            'reason': 'Added manually by admin',
-            'role': data.get('role', 'Member'),
-            'priority': 5,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        }
-        
-        registration = Registration(**registration_data)
-        db.session.add(registration)
-        db.session.commit()
-
-        # ── Sync to Supabase ─────────────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').insert({
-                    'firstName': registration_data['firstName'],
-                    'lastName': registration_data['lastName'],
-                    'phone': registration_data['phone'],
-                    'city': registration_data['city'],
-                    'bike': registration_data['bike'],
-                    'experience': registration_data['experience'],
-                    'alias': registration_data['alias'],
-                    'instagram': registration_data['instagram'],
-                    'riderPhoto': registration_data['riderPhoto'],
-                    'bikePhoto': registration_data['bikePhoto'],
-                    'reason': registration_data['reason'],
-                    'role': registration_data['role'],
-                    'priority': registration_data['priority'],
-                    'timestamp': registration_data['timestamp']
-                }).execute()
-            except Exception as e:
-                print(f"Supabase sync failed: {e}")
-
-        # Auto-backup to external storage
-        try:
-            sync_to_external_storage()
-            print("Auto-backup completed after member addition")
-        except Exception as e:
-            print(f"Auto-backup failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Member added successfully'})
-        
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
+# ── Public: register ──────────────────────────────────────────────────────────
 
 @app.route('/register', methods=['POST'])
 def register():
     try:
-        # Check if form data or JSON
-        if request.content_type.startswith('multipart/form-data'):
-            data = request.form.to_dict()
-            driving_license_file = request.files.get('drivingLicenseFile')
-            rider_photo = request.files.get('riderPhoto')
-            bike_photo = request.files.get('bikePhoto')
-            instagram = data.get('instagram', '').strip()
-        else:
-            data = request.get_json()
-            driving_license_file = None
-            rider_photo = None
-            bike_photo = None
+        data               = request.form.to_dict()
+        driving_license    = request.files.get('drivingLicenseFile')
+        rider_photo        = request.files.get('riderPhoto')
+        bike_photo         = request.files.get('bikePhoto')
 
-        required = ['firstName', 'lastName', 'phone', 'city', 'bike']
-        for field in required:
+        # Required fields
+        for field in ['firstName', 'lastName', 'phone', 'city', 'bike']:
             if not data.get(field, '').strip():
                 return jsonify({'success': False, 'message': f'{field} is required'}), 400
 
-        # Validate mobile number
-        phone = data.get('phone', '').strip()
-        validated_phone = validate_mobile_number(phone)
-        if not validated_phone:
-            return jsonify({'success': False, 'message': 'Invalid mobile number. Please enter a valid 10-digit Indian mobile number starting with 6, 7, 8, or 9.'}), 400
+        phone = validate_phone(data['phone'])
+        if not phone:
+            return jsonify({'success': False,
+                            'message': 'Invalid mobile number. Enter a valid 10-digit number starting with 6, 7, 8 or 9.'}), 400
 
-        # Check for duplicate mobile number
-        if check_duplicate_mobile(phone):
-            return jsonify({'success': False, 'message': 'This mobile number is already registered. One rider can join only once.'}), 400
+        if phone_exists(phone):
+            return jsonify({'success': False,
+                            'message': 'This mobile number is already registered.'}), 400
 
-        # Handle driving license file upload (optional)
-        driving_license_filename = None
-        if driving_license_file and driving_license_file.filename:
-            if allowed_file(driving_license_file.filename):
-                filename = secure_filename(f"{data.get('firstName', '')}_{data.get('lastName', '')}_license_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{driving_license_file.filename}")
-                driving_license_filename = upload_file_to_s3(driving_license_file, filename)
-            else:
-                return jsonify({'success': False, 'message': 'Invalid file type. Allowed: JPG, PNG, PDF'}), 400
+        # Validate file types
+        if driving_license and driving_license.filename and not allowed_file(driving_license.filename):
+            return jsonify({'success': False, 'message': 'License: only JPG, PNG, PDF allowed'}), 400
+        if rider_photo and rider_photo.filename and not allowed_image(rider_photo.filename):
+            return jsonify({'success': False, 'message': 'Profile photo: only JPG, PNG allowed'}), 400
+        if bike_photo and bike_photo.filename and not allowed_image(bike_photo.filename):
+            return jsonify({'success': False, 'message': 'Bike photo: only JPG, PNG allowed'}), 400
 
-        # Process rider photo — encode to base64 for DB storage
-        rider_photo_base64 = None
-        if rider_photo and rider_photo.filename:
-            if allowed_image_file(rider_photo.filename):
-                rider_photo_base64 = encode_file_to_base64(rider_photo)
-                if not rider_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
+        # Encode photos to base64
+        rider_photo_b64 = encode_base64(rider_photo) if rider_photo and rider_photo.filename else None
+        bike_photo_b64  = encode_base64(bike_photo)  if bike_photo  and bike_photo.filename  else None
 
-        # Process bike photo — encode to base64 for DB storage
-        bike_photo_base64 = None
-        if bike_photo and bike_photo.filename:
-            if allowed_image_file(bike_photo.filename):
-                bike_photo_base64 = encode_file_to_base64(bike_photo)
-                if not bike_photo_base64:
-                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
+        # Insert into Supabase
+        supabase.table('riders').insert({
+            'firstName':    data.get('firstName', '').strip(),
+            'lastName':     data.get('lastName', '').strip(),
+            'phone':        phone,
+            'city':         data.get('city', '').strip(),
+            'bike':         data.get('bike', '').strip(),
+            'experience':   data.get('experience', '').strip(),
+            'alias':        data.get('alias', '').strip(),
+            'instagram':    data.get('instagram', '').strip(),
+            'riderPhoto':   rider_photo_b64,
+            'bikePhoto':    bike_photo_b64,
+            'reason':       data.get('message', '').strip(),
+            'role':         'Member',
+            'priority':     5,
+            'timestamp':    datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        }).execute()
 
-        # Create new registration
-        registration = Registration(
-            firstName=data.get('firstName', '').strip(),
-            lastName=data.get('lastName', '').strip(),
-            phone=validated_phone,
-            city=data.get('city', '').strip(),
-            bike=data.get('bike', '').strip(),
-            drivingLicenseFile=driving_license_filename,
-            experience=data.get('experience', '').strip(),
-            alias=data.get('alias', '').strip(),
-            instagram=data.get('instagram', '').strip(),
-            riderPhoto=rider_photo_base64,
-            bikePhoto=bike_photo_base64,
-            reason=data.get('message', '').strip(),
-            role='Member',
-            priority=5,
-            timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        )
-
-        db.session.add(registration)
-        db.session.commit()
-
-        # ── Write to Supabase ────────────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').insert({
-                    'firstName': registration.firstName,
-                    'lastName': registration.lastName,
-                    'phone': registration.phone,
-                    'city': registration.city,
-                    'bike': registration.bike,
-                    'experience': registration.experience,
-                    'alias': registration.alias,
-                    'instagram': registration.instagram,
-                    'riderPhoto': registration.riderPhoto,
-                    'bikePhoto': registration.bikePhoto,
-                    'reason': registration.reason,
-                    'role': registration.role,
-                    'priority': registration.priority,
-                    'timestamp': registration.timestamp
-                }).execute()
-                print("Registration synced to Supabase")
-            except Exception as e:
-                print(f"Supabase sync failed (data saved locally): {e}")
-
-        # Auto-backup to external storage and cloud sync
-        try:
-            sync_to_external_storage()
-            auto_sync_to_cloud()
-            print("Auto-backup and cloud sync completed after registration")
-        except Exception as e:
-            print(f"Auto-backup failed: {e}")
-
-        whatsapp_link = os.environ.get('WHATSAPP_LINK', "https://chat.whatsapp.com/HbRgZJa1Rqm5Kbso36WDWf?mode=hqctcla")
-
+        whatsapp_link = os.environ.get('WHATSAPP_LINK',
+                                       'https://chat.whatsapp.com/HbRgZJa1Rqm5Kbso36WDWf')
         return jsonify({
             'success': True,
             'message': 'Welcome to the MTR Brotherhood!',
@@ -1050,698 +182,320 @@ def register():
         })
 
     except Exception as e:
-        db.session.rollback()
+        print(f"Register error: {e}")
         return jsonify({'success': False, 'message': 'Something went wrong. Please try again.'}), 500
+
+# ── Admin: login ──────────────────────────────────────────────────────────────
+
+@app.route('/api/admin-login', methods=['POST'])
+def admin_login():
+    try:
+        data     = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '').strip()
+
+        if (username == os.environ.get('ADMIN_USERNAME', 'Madmax') and
+                password == os.environ.get('ADMIN_PASSWORD', 'Pa$w0rd@Madmax')):
+            return jsonify({'success': True, 'message': 'Login successful'})
+
+        return jsonify({'success': False, 'message': 'Invalid username or password'}), 401
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# ── Admin: change password ────────────────────────────────────────────────────
+
+@app.route('/api/change-password', methods=['POST'])
+def change_password():
+    try:
+        data         = request.get_json()
+        old_password = data.get('oldPassword', '').strip()
+        new_password = data.get('newPassword', '').strip()
+
+        if not old_password or not new_password:
+            return jsonify({'success': False, 'message': 'Both passwords are required'}), 400
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'message': 'New password must be at least 6 characters'}), 400
+        if old_password != os.environ.get('ADMIN_PASSWORD', 'Pa$w0rd@Madmax'):
+            return jsonify({'success': False, 'message': 'Current password is incorrect'}), 401
+
+        os.environ['ADMIN_PASSWORD'] = new_password
+        return jsonify({'success': True, 'message': 'Password changed successfully'})
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# ── Admin: add rider (member / captain / co-founder) ─────────────────────────
+
+def _build_rider_payload(data, rider_photo, bike_photo, role):
+    """Build the dict to insert into Supabase for any rider type."""
+    rider_photo_b64 = encode_base64(rider_photo) if rider_photo and rider_photo.filename else None
+    bike_photo_b64  = encode_base64(bike_photo)  if bike_photo  and bike_photo.filename  else None
+
+    priority = 2 if role == 'Co-Founder' else 3 if role == 'Captain' else 5
+
+    payload = {
+        'firstName':  data.get('firstName', '').strip(),
+        'lastName':   data.get('lastName', '').strip(),
+        'phone':      data.get('phone', '').strip(),
+        'city':       data.get('city', 'Pune').strip(),
+        'bike':       data.get('bike', '').strip(),
+        'experience': data.get('experience', '').strip(),
+        'alias':      data.get('alias', '').strip(),
+        'instagram':  data.get('instagram', '').strip(),
+        'riderPhoto': rider_photo_b64,
+        'bikePhoto':  bike_photo_b64,
+        'role':       role,
+        'priority':   priority,
+        'timestamp':  datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+    }
+
+    if role == 'Captain':
+        cap_num = data.get('captainNumber', '').strip()
+        if not cap_num:
+            cap_num = str(next_captain_number())
+        payload['captainNumber'] = cap_num
+        payload['reason'] = f"Captain {cap_num} of MTR Brotherhood"
+    elif role == 'Co-Founder':
+        payload['reason'] = 'Co-Founder of MTR Brotherhood'
+    else:
+        payload['reason'] = data.get('reason', 'Added by admin').strip()
+
+    return payload
+
+@app.route('/api/add-member-manual', methods=['POST'])
+def add_member_manual():
+    try:
+        data        = request.form.to_dict() if request.content_type.startswith('multipart') else request.get_json()
+        rider_photo = request.files.get('riderPhoto') if request.content_type.startswith('multipart') else None
+        bike_photo  = request.files.get('bikePhoto')  if request.content_type.startswith('multipart') else None
+
+        for field in ['firstName', 'lastName', 'phone', 'city', 'bike']:
+            if not data.get(field, '').strip():
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        role    = data.get('role', 'Member')
+        payload = _build_rider_payload(data, rider_photo, bike_photo, role)
+        supabase.table('riders').insert(payload).execute()
+        return jsonify({'success': True, 'message': f'{role} added successfully'})
+    except Exception as e:
+        print(f"Add member error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/add-captain', methods=['POST'])
+def add_captain():
+    try:
+        data        = request.form.to_dict() if request.content_type.startswith('multipart') else request.get_json()
+        rider_photo = request.files.get('riderPhoto') if request.content_type.startswith('multipart') else None
+        bike_photo  = request.files.get('bikePhoto')  if request.content_type.startswith('multipart') else None
+
+        for field in ['firstName', 'lastName', 'alias', 'bike', 'phone']:
+            if not data.get(field, '').strip():
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        payload = _build_rider_payload(data, rider_photo, bike_photo, 'Captain')
+        supabase.table('riders').insert(payload).execute()
+        return jsonify({'success': True, 'message': 'Captain added successfully'})
+    except Exception as e:
+        print(f"Add captain error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+@app.route('/api/add-cofounder', methods=['POST'])
+def add_cofounder():
+    try:
+        data        = request.form.to_dict() if request.content_type.startswith('multipart') else request.get_json()
+        rider_photo = request.files.get('riderPhoto') if request.content_type.startswith('multipart') else None
+        bike_photo  = request.files.get('bikePhoto')  if request.content_type.startswith('multipart') else None
+
+        for field in ['firstName', 'lastName', 'alias', 'bike', 'phone']:
+            if not data.get(field, '').strip():
+                return jsonify({'success': False, 'message': f'{field} is required'}), 400
+
+        payload = _build_rider_payload(data, rider_photo, bike_photo, 'Co-Founder')
+        supabase.table('riders').insert(payload).execute()
+        return jsonify({'success': True, 'message': 'Co-Founder added successfully'})
+    except Exception as e:
+        print(f"Add cofounder error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# ── Admin: update rider ───────────────────────────────────────────────────────
 
 @app.route('/api/update-rider', methods=['POST'])
 def update_rider():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
     try:
-        # Check if form data or JSON
-        if request.content_type.startswith('multipart/form-data'):
-            data = request.form.to_dict()
-            rider_photo = request.files.get('riderPhoto')
-            bike_photo = request.files.get('bikePhoto')
-        else:
-            data = request.get_json()
-            rider_photo = None
-            bike_photo = None
-        
-        # Get identifying information
-        original_phone = data.get('phone', '').strip()
-        original_timestamp = data.get('timestamp', '').strip()
-        
-        if not original_phone or not original_timestamp:
-            return jsonify({'success': False, 'message': 'Original phone and timestamp are required'}), 400
-        
-        # Find the rider to update
-        rider_to_update = Registration.query.filter_by(phone=original_phone, timestamp=original_timestamp).first()
-        
-        if not rider_to_update:
+        data        = request.form.to_dict() if request.content_type.startswith('multipart') else request.get_json()
+        rider_photo = request.files.get('riderPhoto') if request.content_type.startswith('multipart') else None
+        bike_photo  = request.files.get('bikePhoto')  if request.content_type.startswith('multipart') else None
+        section_photo = request.files.get('sectionPhoto') if request.content_type.startswith('multipart') else None
+
+        phone     = data.get('phone', '').strip()
+        timestamp = data.get('timestamp', '').strip()
+
+        if not phone or not timestamp:
+            return jsonify({'success': False, 'message': 'phone and timestamp are required'}), 400
+
+        # Fetch existing rider
+        res = supabase.table('riders').select('*').eq('phone', phone).eq('timestamp', timestamp).execute()
+        if not res.data:
             return jsonify({'success': False, 'message': 'Rider not found'}), 404
+
+        existing = res.data[0]
+        is_ceo   = existing.get('priority') == 1
+
+        updates = {
+            'firstName':  data.get('firstName', existing['firstName']).strip(),
+            'lastName':   data.get('lastName',  existing['lastName']).strip(),
+            'alias':      data.get('alias',     existing.get('alias', '')).strip(),
+            'city':       data.get('city',      existing.get('city', '')).strip(),
+            'bike':       data.get('bike',      existing['bike']).strip(),
+            'experience': data.get('experience',existing.get('experience', '')).strip(),
+            'instagram':  data.get('instagram', existing.get('instagram', '')).strip(),
+            'reason':     data.get('reason',    existing.get('reason', '')).strip(),
+        }
+
+        # CEO: lock role & priority
+        if is_ceo:
+            updates['role']     = 'Founder'
+            updates['priority'] = 1
         
-        # Process rider photo if provided
+        # Photos — only update if a new file was uploaded
         if rider_photo and rider_photo.filename:
-            if allowed_image_file(rider_photo.filename):
-                rider_photo_base64 = encode_file_to_base64(rider_photo)
-                if rider_photo_base64:
-                    rider_to_update.riderPhoto = rider_photo_base64
-                else:
-                    return jsonify({'success': False, 'message': 'Error processing rider photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid photo file type. Allowed: JPG, PNG'}), 400
-
-        # Process bike photo if provided
+            b64 = encode_base64(rider_photo)
+            if b64: updates['riderPhoto'] = b64
         if bike_photo and bike_photo.filename:
-            if allowed_image_file(bike_photo.filename):
-                bike_photo_base64 = encode_file_to_base64(bike_photo)
-                if bike_photo_base64:
-                    rider_to_update.bikePhoto = bike_photo_base64
-                else:
-                    return jsonify({'success': False, 'message': 'Error processing bike photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid bike photo file type. Allowed: JPG, PNG'}), 400
-        
-        # Process section photo if provided
-        section_photo = request.files.get('sectionPhoto')
+            b64 = encode_base64(bike_photo)
+            if b64: updates['bikePhoto'] = b64
         if section_photo and section_photo.filename:
-            if allowed_image_file(section_photo.filename):
-                section_photo_base64 = encode_file_to_base64(section_photo)
-                if section_photo_base64:
-                    rider_to_update.sectionPhoto = section_photo_base64
-                else:
-                    return jsonify({'success': False, 'message': 'Error processing section photo'}), 400
-            else:
-                return jsonify({'success': False, 'message': 'Invalid section photo file type. Allowed: JPG, PNG'}), 400
-        
-        # Prevent role and priority changes for CEO/Founder
-        if rider_to_update.priority == 1 or (rider_to_update.firstName.strip().lower() == 'rahul' and rider_to_update.lastName.strip().lower() == 'choudhari'):
-            # Only allow basic info updates for CEO, not role/priority changes
-            rider_to_update.firstName = data.get('firstName', rider_to_update.firstName).strip()
-            rider_to_update.lastName = data.get('lastName', rider_to_update.lastName).strip()
-            rider_to_update.alias = data.get('alias', rider_to_update.alias).strip()
-            rider_to_update.phone = data.get('phone', rider_to_update.phone).strip()
-            rider_to_update.city = data.get('city', rider_to_update.city).strip()
-            rider_to_update.bike = data.get('bike', rider_to_update.bike).strip()
-            rider_to_update.experience = data.get('experience', rider_to_update.experience).strip()
-            rider_to_update.instagram = data.get('instagram', rider_to_update.instagram).strip()
-            rider_to_update.reason = data.get('reason', rider_to_update.reason).strip()
-            rider_to_update.role = 'Founder'  # Force role to remain Founder
-            rider_to_update.priority = 1      # Force priority to remain 1
-        else:
-            # Allow all updates for regular riders
-            rider_to_update.firstName = data.get('firstName', rider_to_update.firstName).strip()
-            rider_to_update.lastName = data.get('lastName', rider_to_update.lastName).strip()
-            rider_to_update.alias = data.get('alias', rider_to_update.alias).strip()
-            rider_to_update.phone = data.get('phone', rider_to_update.phone).strip()
-            rider_to_update.city = data.get('city', rider_to_update.city).strip()
-            rider_to_update.bike = data.get('bike', rider_to_update.bike).strip()
-            rider_to_update.experience = data.get('experience', rider_to_update.experience).strip()
-            rider_to_update.instagram = data.get('instagram', rider_to_update.instagram).strip()
-            rider_to_update.reason = data.get('reason', rider_to_update.reason).strip()
-        
-        db.session.commit()
+            b64 = encode_base64(section_photo)
+            if b64: updates['sectionPhoto'] = b64
 
-        # ── Sync update to Supabase ──────────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').update({
-                    'firstName': rider_to_update.firstName,
-                    'lastName': rider_to_update.lastName,
-                    'alias': rider_to_update.alias,
-                    'city': rider_to_update.city,
-                    'bike': rider_to_update.bike,
-                    'experience': rider_to_update.experience,
-                    'instagram': rider_to_update.instagram,
-                    'reason': rider_to_update.reason,
-                    'role': rider_to_update.role,
-                    'riderPhoto': rider_to_update.riderPhoto,
-                    'bikePhoto': rider_to_update.bikePhoto,
-                    'sectionPhoto': rider_to_update.sectionPhoto,
-                }).eq('phone', original_phone).execute()
-            except Exception as e:
-                print(f"Supabase update sync failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Rider information updated successfully'})
-        
+        supabase.table('riders').update(updates).eq('phone', phone).eq('timestamp', timestamp).execute()
+        return jsonify({'success': True, 'message': 'Rider updated successfully'})
+
     except Exception as e:
-        db.session.rollback()
+        print(f"Update rider error: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
+
+# ── Admin: update rider role ──────────────────────────────────────────────────
 
 @app.route('/api/update-rider-role', methods=['POST'])
 def update_rider_role():
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
     try:
-        data = request.get_json()
-        phone = data.get('phone')
-        timestamp = data.get('timestamp')
-        new_role = data.get('role')
-        captain_number = data.get('captainNumber', '1')
-        
+        data          = request.get_json()
+        phone         = data.get('phone', '').strip()
+        timestamp     = data.get('timestamp', '').strip()
+        new_role      = data.get('role', '').strip()
+        captain_num   = data.get('captainNumber', '').strip()
+
         if not phone or not timestamp or not new_role:
-            return jsonify({'success': False, 'message': 'Phone, timestamp, and role are required'}), 400
-        
-        # Validate role
+            return jsonify({'success': False, 'message': 'phone, timestamp and role are required'}), 400
+
         valid_roles = ['Member', 'Co-Founder', 'Captain']
         if new_role not in valid_roles:
-            return jsonify({'success': False, 'message': 'Invalid role. Must be Member, Co-Founder, or Captain'}), 400
-        
-        # Load registrations and find the rider
-        rider_to_update = Registration.query.filter_by(phone=phone, timestamp=timestamp).first()
-        
-        if not rider_to_update:
-            return jsonify({'success': False, 'message': 'Rider not found'}), 404
-        
-        # Prevent role changes for CEO/Founder (priority 1)
-        if rider_to_update.priority == 1:
-            return jsonify({'success': False, 'message': 'Cannot change role of CEO/Founder. This member is protected.'}), 403
-        
-        # Additional protection: Check if this is Rahul Choudhari by name
-        if (rider_to_update.firstName.strip().lower() == 'rahul' and 
-            rider_to_update.lastName.strip().lower() == 'choudhari'):
-            return jsonify({'success': False, 'message': 'Cannot change role of CEO/Founder. This member is protected.'}), 403
-        
-        # Update role and priority
-        rider_to_update.role = new_role
-        
-        # Set priority based on role
-        if new_role == 'Co-Founder':
-            rider_to_update.priority = 2
-            rider_to_update.captainNumber = None
-        elif new_role == 'Captain':
-            rider_to_update.priority = 3
-            # Auto-assign captain number if not provided
-            if not captain_number:
-                captain_number = str(get_next_captain_number())
-            else:
-                # Ensure captain number is valid
-                try:
-                    captain_number = str(int(captain_number))
-                except (ValueError, TypeError):
-                    captain_number = str(get_next_captain_number())
-            
-            rider_to_update.captainNumber = captain_number
-            rider_to_update.reason = f'Captain {captain_number} of MTR Brotherhood'
-        else:
-            rider_to_update.priority = 5
-            rider_to_update.captainNumber = None
-        
-        db.session.commit()
+            return jsonify({'success': False, 'message': f'Role must be one of: {", ".join(valid_roles)}'}), 400
 
-        # ── Sync role update to Supabase ─────────────────────────────────────
-        if supabase:
-            try:
-                supabase.table('riders').update({
-                    'role': rider_to_update.role,
-                    'priority': rider_to_update.priority,
-                    'captainNumber': rider_to_update.captainNumber,
-                    'reason': rider_to_update.reason,
-                }).eq('phone', phone).execute()
-            except Exception as e:
-                print(f"Supabase role sync failed: {e}")
-        
-        return jsonify({'success': True, 'message': 'Rider role updated successfully'})
-        
+        # Fetch rider
+        res = supabase.table('riders').select('priority').eq('phone', phone).eq('timestamp', timestamp).execute()
+        if not res.data:
+            return jsonify({'success': False, 'message': 'Rider not found'}), 404
+
+        if res.data[0].get('priority') == 1:
+            return jsonify({'success': False, 'message': 'Cannot change role of CEO/Founder.'}), 403
+
+        updates = {'role': new_role}
+        if new_role == 'Co-Founder':
+            updates['priority']      = 2
+            updates['captainNumber'] = None
+        elif new_role == 'Captain':
+            updates['priority']      = 3
+            if not captain_num:
+                captain_num = str(next_captain_number())
+            updates['captainNumber'] = captain_num
+            updates['reason']        = f'Captain {captain_num} of MTR Brotherhood'
+        else:
+            updates['priority']      = 5
+            updates['captainNumber'] = None
+
+        supabase.table('riders').update(updates).eq('phone', phone).eq('timestamp', timestamp).execute()
+        return jsonify({'success': True, 'message': 'Role updated successfully'})
+
     except Exception as e:
-        db.session.rollback()
+        print(f"Update role error: {e}")
         return jsonify({'success': False, 'message': str(e)}), 500
 
-@app.route('/uploads/<filename>')
-def serve_file(filename):
-    """Serve uploaded files - works for both local and Render.com"""
-    print(f"Attempting to serve file: {filename}")
-    
-    # If S3 is configured, redirect to S3
-    if s3_client:
-        s3_url = f"https://{AWS_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/uploads/{filename}"
-        print(f"Redirecting to S3: {s3_url}")
-        return redirect(s3_url)
-    
-    # Local file serving for Render.com
-    try:
-        upload_folder = app.config['UPLOAD_FOLDER']
-        print(f"Upload folder: {upload_folder}")
-        
-        # Check if file exists
-        file_path = os.path.join(upload_folder, filename)
-        if os.path.exists(file_path):
-            print(f"File exists: {file_path}")
-            return send_from_directory(upload_folder, filename)
-        else:
-            print(f"File not found: {file_path}")
-            return jsonify({'error': f'File {filename} not found', 'path': file_path}), 404
-            
-    except Exception as e:
-        print(f"Error serving file: {e}")
-        return jsonify({'error': str(e), 'filename': filename}), 500
+# ── Admin: delete rider ───────────────────────────────────────────────────────
 
-@app.route('/debug/uploads')
-def debug_uploads():
-    """Debug route to check uploaded files"""
+@app.route('/api/delete-rider', methods=['POST'])
+def delete_rider():
     try:
-        upload_dir = app.config['UPLOAD_FOLDER']
-        abs_upload_dir = os.path.abspath(upload_dir)
-        
-        if os.path.exists(upload_dir):
-            files = os.listdir(upload_dir)
-            file_details = []
-            for file in files:
-                file_path = os.path.join(upload_dir, file)
-                file_size = os.path.getsize(file_path) if os.path.isfile(file_path) else 0
-                file_details.append({
-                    'name': file,
-                    'size': file_size,
-                    'path': file_path,
-                    'url': f"/uploads/{file}",
-                    'exists': os.path.exists(file_path)
-                })
-            
-            return jsonify({
-                'upload_dir': upload_dir,
-                'abs_upload_dir': abs_upload_dir,
-                'files': file_details,
-                'count': len(files),
-                'exists': True,
-                'working_directory': os.getcwd(),
-                'flask_upload_folder': app.config['UPLOAD_FOLDER']
-            })
-        else:
-            return jsonify({
-                'upload_dir': upload_dir,
-                'abs_upload_dir': abs_upload_dir,
-                'files': [],
-                'count': 0,
-                'exists': False,
-                'message': 'Uploads directory does not exist',
-                'working_directory': os.getcwd(),
-                'flask_upload_folder': app.config['UPLOAD_FOLDER']
-            })
+        data      = request.get_json()
+        phone     = data.get('phone', '').strip()
+        timestamp = data.get('timestamp', '').strip()
+
+        if not phone or not timestamp:
+            return jsonify({'success': False, 'message': 'phone and timestamp are required'}), 400
+
+        # Fetch rider to check CEO protection
+        res = supabase.table('riders').select('priority', 'firstName', 'lastName').eq('phone', phone).eq('timestamp', timestamp).execute()
+        if not res.data:
+            return jsonify({'success': False, 'message': 'Rider not found'}), 404
+
+        rider = res.data[0]
+        if rider.get('priority') == 1:
+            return jsonify({'success': False, 'message': 'Cannot delete CEO/Founder. This member is protected.'}), 403
+        if (rider.get('firstName', '').lower() == 'rahul' and
+                rider.get('lastName', '').lower() == 'choudhari'):
+            return jsonify({'success': False, 'message': 'Cannot delete CEO/Founder. This member is protected.'}), 403
+
+        supabase.table('riders').delete().eq('phone', phone).eq('timestamp', timestamp).execute()
+        return jsonify({'success': True, 'message': 'Rider deleted successfully'})
+
     except Exception as e:
-        return jsonify({
-            'error': str(e),
-            'working_directory': os.getcwd(),
-            'flask_upload_folder': app.config['UPLOAD_FOLDER']
-        }), 500
+        print(f"Delete rider error: {e}")
+        return jsonify({'success': False, 'message': str(e)}), 500
+
+# ── Debug / health ────────────────────────────────────────────────────────────
 
 @app.route('/debug/database')
 def debug_database():
-    """Debug route to check database status and riders"""
     try:
-        riders = Registration.query.all()
-        rider_details = []
-        
-        for rider in riders:
-            rider_details.append({
-                'id': rider.id,
-                'firstName': rider.firstName,
-                'lastName': rider.lastName,
-                'phone': rider.phone,
-                'role': rider.role,
-                'priority': rider.priority,
-                'timestamp': rider.timestamp,
-                'hasPhotos': {
-                    'riderPhoto': bool(rider.riderPhoto),
-                    'bikePhoto': bool(rider.bikePhoto),
-                    'sectionPhoto': bool(rider.sectionPhoto)
-                }
-            })
-        
+        res = supabase.table('riders').select('id', 'firstName', 'lastName', 'role', 'priority', 'timestamp').order('priority').execute()
         return jsonify({
-            'database_status': 'connected',
-            'total_riders': len(riders),
-            'riders': rider_details,
-            'database_url': os.environ.get('DATABASE_URL', 'Not configured'),
-            'app_environment': os.environ.get('FLASK_ENV', 'development'),
-            'render_service': os.environ.get('RENDER_SERVICE', 'unknown')
+            'supabase': 'connected',
+            'total_riders': len(res.data),
+            'riders': res.data
         })
     except Exception as e:
-        return jsonify({
-            'database_status': 'error',
-            'error': str(e),
-            'database_url': os.environ.get('DATABASE_URL', 'Not configured'),
-            'app_environment': os.environ.get('FLASK_ENV', 'development')
-        }), 500
+        return jsonify({'supabase': 'error', 'error': str(e)}), 500
 
-@app.route('/api/backup-data', methods=['POST'])
-def backup_data():
-    """Create backup of all rider data to external storage"""
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
+# ── Startup: seed CEO if table is empty ──────────────────────────────────────
+
+def seed_ceo_if_empty():
     try:
-        success = sync_to_external_storage()
-        if success:
-            return jsonify({
-                'success': True,
-                'message': 'Data backed up to external storage successfully'
-            })
+        res = supabase.table('riders').select('id').limit(1).execute()
+        if not res.data:
+            print("Riders table is empty — seeding CEO...")
+            supabase.table('riders').insert({
+                'firstName':  'Rahul',
+                'lastName':   'Choudhari',
+                'phone':      '9876543210',
+                'city':       'Pune',
+                'bike':       'Royal Enfield Classic 350',
+                'experience': '10+ years',
+                'alias':      'Madmax',
+                'instagram':  'madmax_mtr',
+                'reason':     'Founder of Mad To Ride Brotherhood',
+                'role':       'Founder',
+                'priority':   1,
+                'timestamp':  '01 Jan 2020'
+            }).execute()
+            print("CEO seeded successfully.")
         else:
-            return jsonify({
-                'success': False,
-                'message': 'Backup failed - check logs'
-            })
+            print(f"Supabase has {len(res.data)}+ riders — no seeding needed.")
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+        print(f"Seed error: {e}")
 
-@app.route('/api/restore-data', methods=['POST'])
-def restore_data():
-    """Restore data from external storage"""
-    if not check_admin_auth():
-        return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-    
-    try:
-        backup_data = load_from_google_drive()
-        if backup_data:
-            # Clear existing data
-            Registration.query.delete()
-            db.session.commit()
-            
-            # Restore from backup
-            for rider_data in backup_data:
-                rider = Registration(
-                    firstName=rider_data.get('firstName', ''),
-                    lastName=rider_data.get('lastName', ''),
-                    phone=rider_data.get('phone', ''),
-                    city=rider_data.get('city', ''),
-                    bike=rider_data.get('bike', ''),
-                    experience=rider_data.get('experience', ''),
-                    alias=rider_data.get('alias', ''),
-                    instagram=rider_data.get('instagram', ''),
-                    riderPhoto=rider_data.get('riderPhoto'),
-                    bikePhoto=rider_data.get('bikePhoto'),
-                    sectionPhoto=rider_data.get('sectionPhoto'),
-                    reason=rider_data.get('reason', ''),
-                    role=rider_data.get('role', 'Member'),
-                    priority=rider_data.get('priority', 5),
-                    timestamp=rider_data.get('timestamp', '')
-                )
-                db.session.add(rider)
-            
-            db.session.commit()
-            return jsonify({
-                'success': True,
-                'message': f'Restored {len(backup_data)} riders from backup'
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': 'No backup data found'
-            })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
+seed_ceo_if_empty()
 
-@app.route('/api/auto-backup', methods=['POST'])
-def auto_backup():
-    """Automatic backup after any data change"""
-    try:
-        sync_to_external_storage()
-        return jsonify({'success': True})
-    except:
-        return jsonify({'success': False})
-
-@app.route('/api/download-backup', methods=['GET'])
-def download_backup():
-    """Download backup file for users"""
-    try:
-        backup_file = 'mtr_backup.json'
-        if os.path.exists(backup_file):
-            return send_file(backup_file, as_attachment=True, download_name='mtr_backup.json')
-        else:
-            return jsonify({'error': 'No backup file found'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/backup-status', methods=['GET'])
-def backup_status():
-    """Check backup status and file info"""
-    try:
-        backup_file = 'mtr_backup.json'
-        if os.path.exists(backup_file):
-            file_size = os.path.getsize(backup_file)
-            mod_time = os.path.getmtime(backup_file)
-            
-            # Read backup to get rider count
-            with open(backup_file, 'r') as f:
-                backup_data = json.load(f)
-            
-            # Check cloud sync status
-            google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
-            cloud_sync_status = 'configured' if google_drive_url else 'not_configured'
-            
-            return jsonify({
-                'backup_exists': True,
-                'file_size': file_size,
-                'last_modified': mod_time,
-                'rider_count': len(backup_data),
-                'file_path': backup_file,
-                'backup_time': datetime.fromtimestamp(mod_time).strftime('%Y-%m-%d %H:%M:%S'),
-                'cloud_sync': cloud_sync_status,
-                'cloud_provider': 'Google Drive' if google_drive_url else 'Local JSON'
-            })
-        else:
-            return jsonify({
-                'backup_exists': False,
-                'message': 'No backup file found',
-                'cloud_sync': 'not_configured'
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/cloud-status', methods=['GET'])
-def cloud_status():
-    """Check cloud storage status"""
-    try:
-        google_drive_url = os.environ.get('GOOGLE_DRIVE_WEBHOOK_URL')
-        last_sync_time = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-        
-        return jsonify({
-            'cloud_sync': 'configured' if google_drive_url else 'not_configured',
-            'cloud_provider': 'Google Drive' if google_drive_url else 'Local JSON',
-            'last_sync_time': last_sync_time,
-            'auto_sync_enabled': True,
-            'sync_status': 'active'
-        })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-@app.route('/api/admin/create-backup', methods=['POST'])
-def create_backup():
-    """Create backup manually"""
-    try:
-        if not check_admin_auth():
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-        # Create backup
-        backup_data = []
-        riders = Registration.query.all()
-        for rider in riders:
-            backup_data.append(rider.to_dict())
-        
-        # Save to local file
-        with open('mtr_backup.json', 'w') as f:
-            json.dump(backup_data, f, indent=2, default=str)
-        
-        # Sync to Google Drive
-        try:
-            save_to_google_drive(backup_data)
-        except:
-            pass  # Continue even if Google Drive fails
-        
-        return jsonify({
-            'success': True,
-            'message': 'Backup created successfully',
-            'riders_count': len(backup_data),
-            'timestamp': datetime.now().isoformat()
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/admin/restore-backup', methods=['POST'])
-def restore_backup():
-    """Restore from backup file"""
-    try:
-        if not check_admin_auth():
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-        # Try to restore from local backup first
-        backup_data = None
-        try:
-            with open('mtr_backup.json', 'r') as f:
-                backup_data = json.load(f)
-        except:
-            # Try Google Drive
-            backup_data = load_from_google_drive()
-        
-        if not backup_data:
-            return jsonify({'success': False, 'message': 'No backup found'}), 404
-        
-        # Clear existing data
-        Registration.query.delete()
-        db.session.commit()
-        
-        # Restore data
-        for rider_data in backup_data:
-            rider = Registration(
-                firstName=rider_data.get('firstName', ''),
-                lastName=rider_data.get('lastName', ''),
-                phone=rider_data.get('phone', ''),
-                city=rider_data.get('city', ''),
-                bike=rider_data.get('bike', ''),
-                experience=rider_data.get('experience', ''),
-                alias=rider_data.get('alias', ''),
-                instagram=rider_data.get('instagram', ''),
-                riderPhoto=rider_data.get('riderPhoto'),
-                bikePhoto=rider_data.get('bikePhoto'),
-                sectionPhoto=rider_data.get('sectionPhoto'),
-                reason=rider_data.get('reason', ''),
-                role=rider_data.get('role', 'Member'),
-                priority=rider_data.get('priority', 5),
-                timestamp=rider_data.get('timestamp', datetime.now())
-            )
-            db.session.add(rider)
-        
-        db.session.commit()
-        
-        return jsonify({
-            'success': True,
-            'message': 'Backup restored successfully',
-            'riders_restored': len(backup_data)
-        })
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/admin/auto-restore', methods=['POST'])
-def auto_restore():
-    """Auto-restore data if needed"""
-    try:
-        # Check if database is empty
-        rider_count = Registration.query.count()
-        
-        if rider_count == 0:
-            # Try to restore from backup
-            backup_data = None
-            try:
-                with open('mtr_backup.json', 'r') as f:
-                    backup_data = json.load(f)
-            except:
-                backup_data = load_from_google_drive()
-            
-            if backup_data:
-                # Restore data
-                for rider_data in backup_data:
-                    rider = Registration(
-                        firstName=rider_data.get('firstName', ''),
-                        lastName=rider_data.get('lastName', ''),
-                        phone=rider_data.get('phone', ''),
-                        city=rider_data.get('city', ''),
-                        bike=rider_data.get('bike', ''),
-                        experience=rider_data.get('experience', ''),
-                        alias=rider_data.get('alias', ''),
-                        instagram=rider_data.get('instagram', ''),
-                        riderPhoto=rider_data.get('riderPhoto'),
-                        bikePhoto=rider_data.get('bikePhoto'),
-                        sectionPhoto=rider_data.get('sectionPhoto'),
-                        reason=rider_data.get('reason', ''),
-                        role=rider_data.get('role', 'Member'),
-                        priority=rider_data.get('priority', 5),
-                        timestamp=rider_data.get('timestamp', datetime.now())
-                    )
-                    db.session.add(rider)
-                db.session.commit()
-                
-                return jsonify({
-                    'success': True,
-                    'restored': True,
-                    'riders_restored': len(backup_data)
-                })
-        
-        return jsonify({
-            'success': True,
-            'restored': False,
-            'message': 'No restore needed'
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-@app.route('/api/admin/sync-to-cloud', methods=['POST'])
-def sync_to_cloud():
-    """Sync data to Google Drive"""
-    try:
-        if not check_admin_auth():
-            return jsonify({'success': False, 'message': 'Unauthorized'}), 401
-        
-        # Get all rider data
-        backup_data = []
-        riders = Registration.query.all()
-        for rider in riders:
-            backup_data.append(rider.to_dict())
-        
-        # Save to Google Drive
-        save_to_google_drive(backup_data)
-        
-        # Also save local backup
-        with open('mtr_backup.json', 'w') as f:
-            json.dump(backup_data, f, indent=2, default=str)
-        
-        return jsonify({
-            'success': True,
-            'message': 'Data synced to cloud successfully',
-            'riders_synced': len(backup_data)
-        })
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-# Initialize database with Google Drive OAuth2 and auto-restore
-with app.app_context():
-    # Create tables only if they don't exist
-    db.create_all()
-    
-    # Check if database is empty (new deployment)
-    rider_count = Registration.query.count()
-    print(f"Current rider count: {rider_count}")
-    
-    # Try to restore from Google Drive if database is empty
-    if rider_count == 0:
-        try:
-            # First try to load from Google Drive
-            backup_data = load_from_google_drive()
-            if backup_data:
-                print("Found Google Drive backup, restoring...")
-                for rider_data in backup_data:
-                    rider = Registration(
-                        firstName=rider_data.get('firstName', ''),
-                        lastName=rider_data.get('lastName', ''),
-                        phone=rider_data.get('phone', ''),
-                        city=rider_data.get('city', ''),
-                        bike=rider_data.get('bike', ''),
-                        experience=rider_data.get('experience', ''),
-                        alias=rider_data.get('alias', ''),
-                        instagram=rider_data.get('instagram', ''),
-                        riderPhoto=rider_data.get('riderPhoto'),
-                        bikePhoto=rider_data.get('bikePhoto'),
-                        sectionPhoto=rider_data.get('sectionPhoto'),
-                        reason=rider_data.get('reason', ''),
-                        role=rider_data.get('role', 'Member'),
-                        priority=rider_data.get('priority', 5),
-                        timestamp=rider_data.get('timestamp', '')
-                    )
-                    db.session.add(rider)
-                db.session.commit()
-                print(f"Restored {len(backup_data)} riders from Google Drive")
-            else:
-                print("No Google Drive backup found, adding CEO rider...")
-                ceo = Registration(
-                    firstName='Rahul',
-                    lastName='Choudhari',
-                    phone='9876543210',
-                    city='Pune',
-                    bike='Royal Enfield Classic 350',
-                    experience='10+ years',
-                    alias='Madmax',
-                    instagram='madmax_mtr',
-                    reason='Founder of Mad To Ride Brotherhood',
-                    role='Founder',
-                    priority=1,
-                    timestamp='01 Jan 2020'
-                )
-                db.session.add(ceo)
-                db.session.commit()
-                print("CEO rider added to database")
-        except Exception as e:
-            print(f"Database initialization failed: {e}")
-    else:
-        print(f"Database already has {rider_count} riders, preserving existing data")
-        # Sync current data to Google Drive for safety
-        try:
-            auto_sync_to_cloud()
-            print("Synced existing data to Google Drive")
-        except Exception as e:
-            print(f"Initial sync failed: {e}")
+# ── Run ───────────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
