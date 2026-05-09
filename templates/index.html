@@ -1217,8 +1217,10 @@ async function loadRegisteredRiders() {
 }
 
 function renderRidersGrid(riders) {
-  const container = document.getElementById('registeredRiders');
-  container.innerHTML = '';
+  const grid = document.getElementById('ridersGrid');
+  // Remove all existing rider cards (keep the join card)
+  const joinCard = document.getElementById('joinCard');
+  grid.innerHTML = '';
 
   riders.sort((a, b) => (a.priority||5) - (b.priority||5));
 
@@ -1258,8 +1260,27 @@ function renderRidersGrid(riders) {
         <span class="${badgeClass}">${roleBadge}</span>
         <button class="rider-info-btn" onclick="showRiderInfo(${idx})">View Info</button>
       </div>`;
-    container.appendChild(card);
+    grid.appendChild(card);
   });
+
+  // Re-append the join card at the end
+  if (joinCard) {
+    grid.appendChild(joinCard);
+  } else {
+    // Recreate join card if missing
+    const a = document.createElement('a');
+    a.href = '#join';
+    a.id = 'joinCard';
+    a.style.textDecoration = 'none';
+    a.innerHTML = `<div class="rider-card" style="justify-content:center;min-height:180px">
+      <div style="font-size:2.5rem;margin-bottom:12px">+</div>
+      <div class="rider-name">You?</div>
+      <div class="rider-alias">YOUR ALIAS</div>
+      <div class="rider-bike" style="margin:8px 0">Join MTR today</div>
+      <div style="margin-top:10px;padding:6px 18px;background:rgba(232,21,27,0.15);border:1px solid rgba(232,21,27,0.4);font-family:'Barlow Condensed',sans-serif;font-size:0.8rem;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--red)">Register Now</div>
+    </div>`;
+    grid.appendChild(a);
+  }
 }
 
 function showRiderInfo(idx) {
