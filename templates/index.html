@@ -1087,6 +1087,25 @@ async function loadRegisteredRiders() {
     ridersCache = riders;
     renderRidersGrid(riders);
     updateStatNum(riders.length);
+
+    // Update CEO card in About section
+    const ceo = riders.find(r => r.priority === 1);
+    if (ceo) {
+      const ceoAvatar = document.getElementById('ceoAvatar');
+      if (ceoAvatar) {
+        const photoSrc = ceo.sectionPhoto || ceo.riderPhoto;
+        if (photoSrc && photoSrc.trim()) {
+          ceoAvatar.style.backgroundImage = `url('${photoSrc}')`;
+          ceoAvatar.style.backgroundSize = 'cover';
+          ceoAvatar.style.backgroundPosition = 'center';
+          ceoAvatar.style.backgroundColor = 'transparent';
+          ceoAvatar.textContent = '';
+        } else {
+          ceoAvatar.textContent = (ceo.firstName||'R').charAt(0) + (ceo.lastName||'C').charAt(0);
+        }
+      }
+    }
+
     if (adminLoggedIn) {
       refreshDashboard();
     }
