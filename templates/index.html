@@ -1938,6 +1938,14 @@ async function handleSubmit() {
         waLink.onclick = null;
         setTimeout(() => window.open(waUrl, '_blank'), 1500);
       }
+      // Play registration success sound
+      try {
+        const sound = document.getElementById('regSound');
+        if (sound) {
+          sound.currentTime = 0;
+          sound.play().catch(e => console.warn('Sound play blocked:', e));
+        }
+      } catch(e) { console.warn('Sound error:', e); }
       loadRegisteredRiders();
     } else {
       msgEl.textContent = '❌ ' + (data.message || 'Registration failed. Please try again.');
