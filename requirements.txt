@@ -1,5 +1,5 @@
-flask
-gunicorn
-werkzeug
-python-dotenv
-supabase
+flask==3.0.3
+gunicorn==22.0.0
+werkzeug==3.0.3
+python-dotenv==1.0.1
+supabase==2.5.0
